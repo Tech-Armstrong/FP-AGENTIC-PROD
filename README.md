@@ -1,4 +1,4 @@
-# Chat with your data
+# Chat with your Data
 
 AI-powered dashboard assistant built with [CopilotKit](https://copilotkit.ai), Next.js, and Tremor. Ask questions about sample sales metrics in natural language, search the web via Tavily, and see answers in a Copilot sidebar.
 
@@ -40,7 +40,7 @@ This folder is a **standalone app** — copy it to your own repository; it does 
    - **or OpenAI** — `OPENAI_API_KEY` (used when Azure variables are unset)
    - **Tavily** — `TAVILY_API_KEY`
 
-4. **(Recommended) Start the LangGraph agent** so the LLM runs in the graph, not directly from Next.js:
+4. **Start the LangGraph agent** (CopilotKit chat, port **8000**):
 
    ```bash
    cd agent
@@ -48,15 +48,24 @@ This folder is a **standalone app** — copy it to your own repository; it does 
    python main.py
    ```
 
+5. **Start the Airtable / financial-planning API** (client data for the dashboard, port **8001**):
+
+   ```bash
+   pip install -r backend/requirements.txt
+   python backend/airtable_main.py
+   ```
+
+   Set `AIRTABLE_TOKEN`, `AIRTABLE_BASE_ID`, and `AIRTABLE_TABLE` in `.env`. The UI calls this via Next.js `/api/airtable/*` using `FASTAPI_BASE_URL` (default `http://localhost:8001`).
+
    In the repo root `.env`, set `LANGGRAPH_AGENT_URL=http://localhost:8000/copilotkit` (see `.env.example`).
 
-5. **Run the dev server** (separate terminal, repo root):
+6. **Run the dev server** (separate terminal, repo root):
 
    ```bash
    npm run dev
    ```
 
-6. Open [http://localhost:3000](http://localhost:3000).
+7. Open [http://localhost:3000](http://localhost:3000).
 
 ### Optional query parameter
 
