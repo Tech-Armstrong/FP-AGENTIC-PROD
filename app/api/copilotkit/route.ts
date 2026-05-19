@@ -1,13 +1,21 @@
 import {
   CopilotRuntime,
+  ExperimentalEmptyAdapter,
   OpenAIAdapter,
   copilotRuntimeNextJSAppRouterEndpoint,
 } from "@copilotkit/runtime";
+import { LangGraphHttpAgent } from "@copilotkit/runtime/langgraph";
 import { createOpenAI } from "@ai-sdk/openai";
 import { tavily } from "@tavily/core";
 import type { LanguageModel } from "ai";
 import { NextRequest } from "next/server";
 import OpenAI from "openai";
+
+/** Must match LangGraphAGUIAgent name in agent/main.py and layout.tsx */
+export const LANGGRAPH_AGENT_ID = "dashboard_agent";
+
+const langGraphAgentUrl = process.env.LANGGRAPH_AGENT_URL?.trim();
+const useLangGraph = Boolean(langGraphAgentUrl);
 
 function createAzureFetch(apiVersion: string): typeof fetch {
   return async (input, init) => {
@@ -58,48 +66,85 @@ function createAzureChatLanguageModel(): LanguageModel {
     fetch: createAzureFetch(apiVersion),
   });
 
-  // Azure OpenAI does not support the Responses API; use Chat Completions.
   return provider.chat(deployment);
 }
 
-const deployment = process.env.AZURE_DEPLOYMENT_NAME ?? "gpt-4o";
-const openai = createAzureOpenAIClient();
-const serviceAdapter = new OpenAIAdapter({
-  openai,
-  model: deployment,
-});
-
-if (process.env.AZURE_API_KEY && process.env.AZURE_API_BASE) {
-  serviceAdapter.getLanguageModel = () => createAzureChatLanguageModel();
-}
-
-const runtime = new CopilotRuntime({
-  actions: () => [
-    {
-      name: "searchInternet",
-      description: "Searches the internet for information.",
-      parameters: [
-        {
-          name: "query",
-          type: "string",
-          description: "The query to search the internet for.",
-          required: true,
-        },
-      ],
-      handler: async ({ query }: { query: string }) => {
-        const tvly = tavily({ apiKey: process.env.TAVILY_API_KEY });
-        return await tvly.search(query, { max_results: 5 });
-      },
-    },
-  ],
-});
-
-export const POST = async (req: NextRequest) => {
-  const { handleRequest } = copilotRuntimeNextJSAppRouterEndpoint({
-    runtime,
-    serviceAdapter,
-    endpoint: "/api/copilotkit",
+function createDirectLlmRuntime() {
+  const deployment = process.env.AZURE_DEPLOYMENT_NAME ?? "gpt-4o";
+  const openai = createAzureOpenAIClient();
+  const serviceAdapter = new OpenAIAdapter({
+    openai,
+    model: deployment,
   });
 
-  return handleRequest(req);
+  if (process.env.AZURE_API_KEY && process.env.AZURE_API_BASE) {
+    serviceAdapter.getLanguageModel = () => createAzureChatLanguageModel();
+  }
+
+  const runtime = new CopilotRuntime({
+    actions: () => [
+      {
+        name: "searchInternet",
+        description: "Searches the internet for information.",
+        parameters: [
+          {
+            name: "query",
+            type: "string",
+            description: "The query to search the internet for.",
+            required: true,
+          },
+        ],
+        handler: async ({ query }: { query: string }) => {
+          const tvly = tavily({ apiKey: process.env.TAVILY_API_KEY });
+          return await tvly.search(query, { max_results: 5 });
+        },
+      },
+    ],
+  });
+
+  return { runtime, serviceAdapter };
+}
+
+function createLangGraphRuntime() {
+  const serviceAdapter = new ExperimentalEmptyAdapter();
+  const runtime = new CopilotRuntime({
+    agents: {
+      [LANGGRAPH_AGENT_ID]: new LangGraphHttpAgent({
+        url: langGraphAgentUrl!,
+      }),
+    },
+  });
+  return { runtime, serviceAdapter };
+}
+
+const { runtime, serviceAdapter } = useLangGraph
+  ? createLangGraphRuntime()
+  : createDirectLlmRuntime();
+
+if (useLangGraph) {
+  console.log("[copilotkit] mode=LangGraph", {
+    url: langGraphAgentUrl,
+    agentId: LANGGRAPH_AGENT_ID,
+  });
+} else {
+  console.log("[copilotkit] mode=direct Azure (LANGGRAPH_AGENT_URL unset)");
+}
+
+const copilotEndpoint = copilotRuntimeNextJSAppRouterEndpoint({
+  runtime,
+  serviceAdapter,
+  endpoint: "/api/copilotkit",
+});
+
+/** Runtime info for smoke tests (curl GET /api/copilotkit). */
+export async function GET() {
+  return Response.json({
+    mode: useLangGraph ? "LangGraph" : "direct Azure",
+    agents: useLangGraph ? [LANGGRAPH_AGENT_ID] : [],
+    langGraphAgentUrl: useLangGraph ? langGraphAgentUrl : undefined,
+  });
+}
+
+export const POST = async (req: NextRequest) => {
+  return copilotEndpoint.handleRequest(req);
 };

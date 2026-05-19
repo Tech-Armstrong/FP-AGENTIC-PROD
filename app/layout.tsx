@@ -4,6 +4,11 @@ import "./globals.css";
 import { CopilotKit } from "@copilotkit/react-core";
 import "@copilotkit/react-ui/styles.css";
 
+/** When LANGGRAPH_AGENT_URL is set, chat goes through the LangGraph agent (see agent/main.py). */
+const langGraphAgentId = process.env.LANGGRAPH_AGENT_URL
+  ? (process.env.NEXT_PUBLIC_LANGGRAPH_AGENT_ID ?? "dashboard_agent")
+  : undefined;
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
@@ -30,7 +35,11 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <CopilotKit runtimeUrl="/api/copilotkit" showDevConsole={false}>
+        <CopilotKit
+          runtimeUrl="/api/copilotkit"
+          agent={langGraphAgentId}
+          showDevConsole={false}
+        >
           {children}
         </CopilotKit>
       </body>
