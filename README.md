@@ -1,4 +1,4 @@
-# Chat with your data
+# Chat with your Data
 
 AI-powered dashboard assistant built with [CopilotKit](https://copilotkit.ai), Next.js, and Tremor. Ask questions about sample sales metrics in natural language, search the web via Tavily, and see answers in a Copilot sidebar.
 
