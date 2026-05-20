@@ -2,7 +2,7 @@
 
 ## 1. What this project does
 
-Users see a **financial planning dashboard** with a client list, per-client portfolio/net-worth views (data from Airtable via a Python API), and a **Copilot sidebar** on the right. They can select clients, browse tabs (overview, kids, liabilities/goals), and ask the assistant questions in natural language about the loaded data or general topics. The AI runs on **Azure OpenAI** (through a LangGraph Python agent by default), receives **dashboard context** from the browser via CopilotKit readables, and can call **`searchInternet`** (Tavily) when the answer needs information outside the dashboard.
+Users see a **financial planning dashboard** with a client list, per-client portfolio/net-worth views (data from Airtable via a Python API), and a **Copilot sidebar** on the right. They can select clients, browse tabs (overview, kids, liabilities/goals), run **Make plan** to execute the Armstrong **LangGraph** financial-planning workflow for the selected record, and ask the assistant questions in natural language about the loaded data or general topics. The AI runs on **Azure OpenAI** (through a LangGraph Python agent by default), receives **dashboard context** from the browser via CopilotKit readables, and can call **`searchInternet`** (Tavily) when the answer needs information outside the dashboard.
 
 ## 2. Tech stack
 
@@ -129,14 +129,18 @@ If LangGraph mode is enabled but the Python agent is down, chat fails at the pro
 | File path | What it does | What it touches / imports that matters |
 |-----------|--------------|----------------------------------------|
 | `agent/main.py` | LangGraph agent server: Azure LLM, Tavily tool, AG-UI `/copilotkit` SSE, health routes, startup Azure ping | `create_agent`, `LangGraphAGUIAgent`, `CopilotKitMiddleware`, `EventEncoder`, repo-root `.env` |
-| `backend/airtable_main.py` | FastAPI service: lists clients and maps Airtable fields → nested financial JSON | Airtable REST, `AIRTABLE_*` env, runs on `FASTAPI_PORT` (default 8001) |
+| `backend/airtable_main.py` | FastAPI service: lists clients and maps Airtable fields → nested financial JSON; **`POST /financial-plan/run`** runs the Armstrong plan | Airtable REST, `AIRTABLE_*` env, runs on `FASTAPI_PORT` (default 8001) |
+| `backend/financial_plan_runner.py` | Chdir + `sys.path`, invokes `Financial_Planning.Workflow.workflow.run_financial_plan_workflow`, returns compact **`summary`** JSON | `Financial_Planning` package |
+| `Financial_Planning/` | Armstrong LangGraph financial planning (nodes, tools, RSU helpers) | Azure `AZURE_API_*`, `TAVILY_API_KEY`, optional `backend/data/rsu_market_data.parquet` |
+| `app/api/financial-plan/run/route.ts` | Next proxy: **`POST { record_id }`** → FastAPI `/financial-plan/run` | `FASTAPI_BASE_URL`, `fetchFastApi` |
 | `app/layout.tsx` | Root layout; wraps app in `<CopilotKit>` with `runtimeUrl` and optional `agent` id | `@copilotkit/react-core`, `NEXT_PUBLIC_LANGGRAPH_AGENT_ID`, `LANGGRAPH_AGENT_URL` (build-time) |
 | `app/page.tsx` | Home page: sidebar + `ClientsDashboard`; exposes clock readable | `CopilotSidebar`, `useCopilotReadable`, `lib/prompt.ts` |
 | `app/globals.css` | Tailwind v4 theme + CopilotKit CSS variables | `--copilot-kit-*` colors |
 | `app/api/copilotkit/route.ts` | CopilotKit runtime endpoint; LangGraph proxy or direct Azure + Tavily action | `LangGraphHttpAgent`, `CopilotRuntime`, `OpenAIAdapter`, `LANGGRAPH_AGENT_URL` |
 | `app/api/airtable/clients/route.ts` | Next proxy: `GET` client list from FastAPI | `FASTAPI_BASE_URL` → `/clients` |
 | `app/api/airtable/clients/[id]/route.ts` | Next proxy: `GET` one client’s financial payload | `FASTAPI_BASE_URL` → `/clients/{id}` |
-| `components/ClientsDashboard.tsx` | **Active** dashboard: Airtable client UI, charts, Copilot readables + search render action | `/api/airtable/*`, `useCopilotReadable`, `useCopilotAction` |
+| `components/ClientsDashboard.tsx` | **Active** dashboard: Airtable client UI, charts, **FinancialPlanPanel** (“Make plan”), Copilot readables + search render action | `/api/airtable/*`, `/api/financial-plan/run`, `useCopilotReadable`, `useCopilotAction` |
+| `components/FinancialPlanPanel.tsx` | **Make plan** UI: calls financial-plan API, shows summary tables / JSON | `recordId` from selected client |
 | `components/Dashboard.tsx` | **Unused** original sales-metrics demo; still has readables + `searchInternet` render | `data/dashboard-data.ts` — **not mounted** in `app/page.tsx` |
 | `components/Header.tsx` | Static page header | None |
 | `components/Footer.tsx` | Static footer | None |

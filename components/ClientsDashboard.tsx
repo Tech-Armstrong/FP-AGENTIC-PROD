@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useCopilotAction, useCopilotReadable } from "@copilotkit/react-core";
 import { SearchResults } from "./generative-ui/SearchResults";
+import { FinancialPlanPanel } from "./FinancialPlanPanel";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -599,6 +600,7 @@ export function ClientsDashboard() {
 
         {detail && !loadingDetail && (
           <div className="flex flex-col gap-4">
+            <FinancialPlanPanel recordId={selectedId} disabled={loadingDetail} />
 
             {/* ── Net Worth + Portfolio row ── */}
             <div className="flex gap-4 items-stretch">

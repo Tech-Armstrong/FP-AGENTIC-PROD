@@ -1,0 +1,3 @@
+# Install everything for the FastAPI dashboard API + "Make plan" (LangGraph).
+# Use the SAME venv when running: python backend/airtable_main.py
+-r backend/requirements.txt

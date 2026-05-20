@@ -29,10 +29,19 @@ AI-powered financial planning dashboard with a Copilot sidebar: browse client re
 
 3. **Terminal 2 — Airtable API (port 8001):**
 
+   Use a **virtualenv** and install **all** backend deps (includes **langgraph** for **Make plan**):
+
    ```bash
+   python -m venv .venv
+   .\.venv\Scripts\activate          # Windows — on macOS/Linux: source .venv/bin/activate
    pip install -r backend/requirements.txt
+   # or from repo root: pip install -r requirements.txt
    python backend/airtable_main.py
    ```
+
+   If **Make plan** returns `No module named 'langgraph'`, you are not using the venv where the line above ran — reinstall with `pip install -r backend/requirements.txt`.
+
+   **Windows:** If `python backend/airtable_main.py` says the address is already in use on port 8001, an old API process is still running. Stop it (`netstat -ano | findstr :8001` then `taskkill /PID <pid> /F`) or set `FASTAPI_PORT` to another port in `.env`.
 
    Health check: `curl http://localhost:8001/health` → `{"status":"ok"}`
 

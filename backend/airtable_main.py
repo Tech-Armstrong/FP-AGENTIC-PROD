@@ -7,7 +7,16 @@ structured client data for the Next.js dashboard.
 
 import os
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
+
+_BACKEND_DIR = Path(__file__).resolve().parent
+if str(_BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(_BACKEND_DIR))
+
+from stdio_utf8 import force_utf8_stdio  # noqa: E402
+
+force_utf8_stdio()
 
 import requests as http_requests
 import uvicorn
@@ -18,14 +27,14 @@ from fastapi.requests import Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-_BACKEND_DIR = Path(__file__).resolve().parent
-if str(_BACKEND_DIR) not in sys.path:
-    sys.path.insert(0, str(_BACKEND_DIR))
-
 from rsu_market import (  # noqa: E402
     get_prices_for_tickers,
     get_rsu_market_payload,
     refresh_rsu_market_payload,
+)
+from financial_plan_runner import (  # noqa: E402
+    FinancialPlanDependencyError,
+    run_financial_plan_for_client,
 )
 
 # Repo-root .env (same as agent/main.py)
@@ -41,7 +50,29 @@ AIRTABLE_HEADERS = {
     "Content-Type":  "application/json",
 }
 
-app = FastAPI(title="Financial Planning API", version="1.0.0")
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    """UTF-8 stdio + optional langgraph presence check (Make plan)."""
+    force_utf8_stdio()
+    try:
+        import langgraph  # noqa: F401
+
+        print("[financial-plan] langgraph: OK (Make plan dependencies present)")
+    except ModuleNotFoundError:
+        print(
+            "[financial-plan] WARNING: langgraph not installed. "
+            "Run: pip install -r backend/requirements.txt"
+        )
+    yield
+
+
+app = FastAPI(
+    title="Financial Planning API",
+    version="1.0.0",
+    lifespan=_lifespan,
+)
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -53,6 +84,10 @@ app.add_middleware(
 
 class RsuRefreshBody(BaseModel):
     tickers: list[str] = []
+
+
+class FinancialPlanRequest(BaseModel):
+    record_id: str
 
 
 @app.exception_handler(Exception)
@@ -556,6 +591,32 @@ def rsu_market_data_refresh_legacy(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/financial-plan/run")
+def run_financial_plan(req: FinancialPlanRequest):
+    """
+    Run the integrated LangGraph financial planning workflow (Armstrong Financial_Planning)
+    for the given Airtable record. Requires Azure OpenAI + Tavily in .env for LLM nodes.
+    """
+    import traceback
+
+    resp = http_requests.get(f"{AIRTABLE_URL}/{req.record_id}", headers=AIRTABLE_HEADERS)
+    if resp.status_code == 404:
+        raise HTTPException(status_code=404, detail="Client record not found in Airtable")
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"Airtable error: {resp.text}")
+    fields = resp.json().get("fields", {})
+    client_payload = airtable_record_to_client_data(fields)
+    try:
+        return run_financial_plan_for_client(client_payload)
+    except FinancialPlanDependencyError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500, detail=f"Financial plan failed: {exc}"
+        ) from exc
 
 
 if __name__ == "__main__":
