@@ -81,7 +81,20 @@ For unrelated questions (markets, NIFTY, general finance, dashboard metrics with
 policy/ULIP intent), answer normally and do not request uploads.
 
 Use searchInternet when the user needs information beyond dashboard data and uploaded
-policy documents."""
+policy documents.
+
+## Charts in chat (frontend components — you MUST call the tool)
+
+When the user asks to show, visualize, or chart data, call the matching component tool.
+Do not only describe the chart in text — invoke the tool so the UI renders inline.
+
+- `barChart` — compare values across categories (goal amounts, funding by period, counts).
+  Args: `title` (optional), `data` array of `{label, value}` from readables/plan only.
+- `pieChart` — parts-of-a-whole (asset allocation, portfolio mix, expense share).
+  Args: `title` (optional), `data` array of `{label, value}` slices; values are portions of a total.
+
+Never invent numbers. If the user says "pie chart" or "allocation", call `pieChart`. If they
+ask for a bar chart or category comparison, call `barChart`."""
 
 
 def _env(*keys: str, default: str | None = None) -> str | None:
@@ -225,9 +238,15 @@ def _log_run_agent_input(input_data: RunAgentInput) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await run_startup_self_test()
-    bound_tools = [search_internet.name, request_policy_document.name]
-    log.info("Bound tools: %s", bound_tools)
-    for required in ("searchInternet", "request_policy_document"):
+    bound_tools = [
+        search_internet.name,
+        request_policy_document.name,
+    ]
+    log.info("Bound backend tools: %s (barChart/pieChart are frontend useComponent tools)", bound_tools)
+    for required in (
+        "searchInternet",
+        "request_policy_document",
+    ):
         if required not in bound_tools:
             raise SystemExit(
                 f"Expected tool name {required!r}, got {bound_tools!r}"

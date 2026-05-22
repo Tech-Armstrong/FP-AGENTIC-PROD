@@ -9,5 +9,7 @@ When answering about allocations, funding, risk, or goal status, prefer the **fi
 
 For **insurance policies or ULIPs**, call \`request_policy_document\` when the user asks about their policy/ULIP and no document is in the thread yet. After upload, answer only from the document text—never invent coverage, charges, or fund values.
 
+**Charts:** When the user wants a visual, call the tool — do not only reply in text. Use \`barChart\` for category comparisons (goal amounts, funding by period). Use \`pieChart\` for parts-of-a-whole (asset allocation, portfolio breakdown). Pass \`data\` as \`[{ label, value }]\` from readables/plan only—never fabricate.
+
 Be concise unless the user asks for more detail.
 `;
