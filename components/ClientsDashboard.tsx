@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import { useTheme } from "next-themes";
 import { useCopilotAction, useCopilotReadable } from "@copilotkit/react-core";
 import { SearchResults } from "./generative-ui/SearchResults";
 import { FinancialPlanPanel } from "./FinancialPlanPanel";
@@ -103,9 +104,9 @@ function KvGrid({ items }: { items: Record<string, string | number | null | unde
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-4">
       {Object.entries(items).map(([k, v]) => (
-        <div key={k} className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-          <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">{k}</p>
-          <p className="text-sm font-semibold text-gray-800 break-words">{v ?? "—"}</p>
+        <div key={k} className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-800/60">
+          <p className="mb-1 text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400">{k}</p>
+          <p className="break-words text-sm font-semibold text-gray-800 dark:text-gray-100">{v ?? "—"}</p>
         </div>
       ))}
     </div>
@@ -113,20 +114,20 @@ function KvGrid({ items }: { items: Record<string, string | number | null | unde
 }
 
 function DataTable({ rows }: { rows: Record<string, string | number>[] }) {
-  if (!rows.length) return <p className="text-xs text-gray-400 italic">No data recorded.</p>;
+  if (!rows.length) return <p className="text-xs italic text-gray-400 dark:text-gray-500">No data recorded.</p>;
   const cols = Object.keys(rows[0]);
   return (
     <div className="overflow-x-auto mb-2">
       <table className="w-full text-xs border-collapse">
         <thead>
-          <tr className="bg-gray-100">
-            {cols.map(c => <th key={c} className="text-left px-3 py-1.5 font-semibold text-gray-500 border-b-2 border-gray-200 whitespace-nowrap">{c}</th>)}
+          <tr className="bg-gray-100 dark:bg-gray-800">
+            {cols.map(c => <th key={c} className="whitespace-nowrap border-b-2 border-gray-200 px-3 py-1.5 text-left font-semibold text-gray-500 dark:border-gray-600 dark:text-gray-400">{c}</th>)}
           </tr>
         </thead>
         <tbody>
           {rows.map((r, i) => (
-            <tr key={i} className="hover:bg-gray-50 border-b border-gray-100 last:border-0">
-              {cols.map(c => <td key={c} className="px-3 py-1.5 text-gray-700 whitespace-nowrap">{r[c] ?? "—"}</td>)}
+            <tr key={i} className="border-b border-gray-100 last:border-0 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800/50">
+              {cols.map(c => <td key={c} className="whitespace-nowrap px-3 py-1.5 text-gray-700 dark:text-gray-300">{r[c] ?? "—"}</td>)}
             </tr>
           ))}
         </tbody>
@@ -138,16 +139,16 @@ function DataTable({ rows }: { rows: Record<string, string | number>[] }) {
 function SectionLabel({ icon, text }: { icon: string; text: string }) {
   return (
     <div className="flex items-center gap-2 mt-5 mb-2 first:mt-0">
-      <span className="inline-flex items-center justify-center w-5 h-5 bg-gray-900 rounded text-white text-[10px]">{icon}</span>
-      <span className="text-[11px] font-bold uppercase tracking-widest text-gray-600">{text}</span>
+      <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-gray-900 text-[10px] text-white dark:bg-gray-100 dark:text-gray-900">{icon}</span>
+      <span className="text-[11px] font-bold uppercase tracking-widest text-gray-600 dark:text-gray-400">{text}</span>
     </div>
   );
 }
 
-function StatBox({ label, value, color = "text-gray-900" }: { label: string; value: string; color?: string }) {
+function StatBox({ label, value, color = "text-gray-900 dark:text-gray-100" }: { label: string; value: string; color?: string }) {
   return (
-    <div className="bg-white border border-blue-100 rounded-lg px-3 py-2.5">
-      <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">{label}</p>
+    <div className="rounded-lg border border-blue-100 bg-white px-3 py-2.5 dark:border-blue-900/50 dark:bg-gray-900">
+      <p className="mb-1 text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400">{label}</p>
       <p className={`text-sm font-bold ${color}`}>{value}</p>
     </div>
   );
@@ -156,7 +157,9 @@ function StatBox({ label, value, color = "text-gray-900" }: { label: string; val
 // ── Donut chart (canvas-based, no extra lib) ──────────────────────────────────
 function DonutChart({ slices }: { slices: { label: string; value: number; color: string }[] }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { resolvedTheme } = useTheme();
   const total = slices.reduce((s, x) => s + x.value, 0);
+  const holeColor = resolvedTheme === "dark" ? "#111827" : "#ffffff";
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -185,16 +188,16 @@ function DonutChart({ slices }: { slices: { label: string; value: number; color:
     // Donut hole
     ctx.beginPath();
     ctx.arc(cx, cy, innerR, 0, 2 * Math.PI);
-    ctx.fillStyle = "#fff";
+    ctx.fillStyle = holeColor;
     ctx.fill();
-  }, [slices, total]);
+  }, [slices, total, holeColor]);
 
   return (
     <div className="flex flex-col items-center">
       <canvas ref={canvasRef} width={200} height={200} />
       <div className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1">
         {slices.map(s => (
-          <div key={s.label} className="flex items-center gap-1 text-[10px] text-gray-600">
+          <div key={s.label} className="flex items-center gap-1 text-[10px] text-gray-600 dark:text-gray-400">
             <span className="inline-block w-2 h-2 rounded-sm flex-shrink-0" style={{ background: s.color }} />
             {s.label}
           </div>
@@ -227,18 +230,18 @@ function RsuCard({
       )
     : null;
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden mb-2">
+    <div className="mb-2 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
       <button
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between px-4 py-3 bg-blue-50 hover:bg-blue-100 text-left"
+        className="flex w-full items-center justify-between bg-blue-50 px-4 py-3 text-left hover:bg-blue-100 dark:bg-blue-950/40 dark:hover:bg-blue-950/60"
       >
-        <span className="font-bold text-blue-900 text-sm">
+        <span className="text-sm font-bold text-blue-900 dark:text-blue-200">
           {rsu.company_name}{" "}
           {rsu.ticker && (
-            <span className="text-xs font-normal text-gray-500">
+            <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
               ({rsu.ticker})
               {quote && (
-                <span className="ml-1 text-gray-600">
+                <span className="ml-1 text-gray-600 dark:text-gray-300">
                   · ${quote.price_usd.toFixed(2)} · ₹
                   {quote.price_inr.toLocaleString("en-IN")}/share
                 </span>
@@ -246,10 +249,10 @@ function RsuCard({
             </span>
           )}
         </span>
-        <span className="text-xs text-gray-500 text-right">
+        <span className="text-right text-xs text-gray-500 dark:text-gray-400">
           {total.toLocaleString("en-IN")} shares · {rsu.vesting_schedule.length} tranches
           {totalTranche != null && (
-            <span className="block font-semibold text-green-700">
+            <span className="block font-semibold text-green-700 dark:text-green-400">
               Total: {inr(totalTranche)}
             </span>
           )}{" "}
@@ -257,9 +260,9 @@ function RsuCard({
         </span>
       </button>
       {open && (
-        <div className="px-4 py-3 bg-gray-50">
+        <div className="bg-gray-50 px-4 py-3 dark:bg-gray-900/50">
           {quote && (
-            <p className="text-[10px] text-gray-500 mb-2">
+            <p className="mb-2 text-[10px] text-gray-500 dark:text-gray-400">
               FX 1 USD = ₹{quote.usd_to_inr_rate} (as of {quote.scrape_date}) · Tranche
               value = price × FX × shares
             </p>
@@ -391,7 +394,7 @@ function RsuSection({
   return (
     <>
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-        <p className="text-[10px] text-gray-500">
+        <p className="text-[10px] text-gray-500 dark:text-gray-400">
           {meta?.scrape_date
             ? `Market data: ${meta.scrape_date}`
             : "Load prices to compute tranche values"}
@@ -406,7 +409,7 @@ function RsuSection({
           type="button"
           onClick={refreshPrices}
           disabled={refreshing || loading || tickers.length === 0}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-900 text-white hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-blue-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-blue-700 dark:hover:bg-blue-600"
         >
           {refreshing ? (
             <>
@@ -419,12 +422,12 @@ function RsuSection({
         </button>
       </div>
       {error && (
-        <p className="text-xs text-red-600 mb-2 bg-red-50 border border-red-100 rounded px-2 py-1">
+        <p className="mb-2 rounded border border-red-100 bg-red-50 px-2 py-1 text-xs text-red-600 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-400">
           {error}
         </p>
       )}
       {loading && !refreshing && (
-        <p className="text-xs text-gray-400 mb-2">Loading market prices…</p>
+        <p className="mb-2 text-xs text-gray-400 dark:text-gray-500">Loading market prices…</p>
       )}
       {rsus.map((r, i) => (
         <RsuCard
@@ -571,8 +574,8 @@ export function ClientsDashboard() {
   const kids       = cd?.children ?? [];
 
   const TAB = "px-4 py-1.5 text-xs font-semibold border-b-2 -mb-px cursor-pointer transition-colors";
-  const ACTIVE_TAB = `${TAB} border-blue-900 text-blue-900 bg-gray-50`;
-  const IDLE_TAB   = `${TAB} border-transparent text-gray-500 hover:text-blue-700`;
+  const ACTIVE_TAB = `${TAB} border-blue-900 bg-gray-50 text-blue-900 dark:border-blue-400 dark:bg-gray-800 dark:text-blue-300`;
+  const IDLE_TAB   = `${TAB} border-transparent text-gray-500 hover:text-blue-700 dark:text-gray-400 dark:hover:text-blue-300`;
 
   return (
     <div className="relative flex w-full gap-4">
@@ -587,7 +590,7 @@ export function ClientsDashboard() {
       {/* ── Main area ── */}
       <div className="min-w-0 flex-1">
         {!selectedId && (
-          <div className="flex items-center justify-center h-64 rounded-xl border-2 border-dashed border-gray-200 text-gray-400 text-sm">
+          <div className="flex h-64 items-center justify-center rounded-xl border-2 border-dashed border-gray-200 text-sm text-gray-400 dark:border-gray-700 dark:text-gray-500">
             Select a client to view their financial summary
           </div>
         )}
@@ -609,27 +612,27 @@ export function ClientsDashboard() {
             <div className="flex gap-4 items-stretch">
 
               {/* Portfolio chart */}
-              <div className="bg-white border border-gray-200 rounded-xl p-4 flex flex-col items-center w-64 shrink-0">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2">Portfolio Allocation</p>
-                <div className="flex border border-gray-200 rounded overflow-hidden text-[11px] font-semibold mb-3">
-                  <button onClick={() => setChartMode("detailed")} className={`px-3 py-1 ${chartMode === "detailed" ? "bg-gray-900 text-white" : "bg-white text-gray-500"}`}>Detailed</button>
-                  <button onClick={() => setChartMode("liquid")}   className={`px-3 py-1 ${chartMode === "liquid"   ? "bg-gray-900 text-white" : "bg-white text-gray-500"}`}>Liquid &amp; Fixed</button>
+              <div className="flex w-64 shrink-0 flex-col items-center rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
+                <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400">Portfolio Allocation</p>
+                <div className="mb-3 flex overflow-hidden rounded border border-gray-200 text-[11px] font-semibold dark:border-gray-600">
+                  <button onClick={() => setChartMode("detailed")} className={`px-3 py-1 ${chartMode === "detailed" ? "bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900" : "bg-white text-gray-500 dark:bg-gray-900 dark:text-gray-400"}`}>Detailed</button>
+                  <button onClick={() => setChartMode("liquid")}   className={`px-3 py-1 ${chartMode === "liquid"   ? "bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900" : "bg-white text-gray-500 dark:bg-gray-900 dark:text-gray-400"}`}>Liquid &amp; Fixed</button>
                 </div>
                 <DonutChart slices={chartSlices} />
               </div>
 
               {/* Net Worth snapshot */}
-              <div className="flex-1 bg-blue-50 border border-blue-100 rounded-xl p-4">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-blue-700 mb-3">Net Worth &amp; Financial Summary</p>
+              <div className="flex-1 rounded-xl border border-blue-100 bg-blue-50 p-4 dark:border-blue-900/50 dark:bg-blue-950/30">
+                <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-blue-700 dark:text-blue-300">Net Worth &amp; Financial Summary</p>
                 <div className="grid grid-cols-3 gap-2 mb-2">
                   <StatBox label="Total Investments" value={inr(totalInvestments)} />
-                  <StatBox label="Total Liabilities"  value={inr(totalLiabilities)} color="text-red-600" />
-                  <StatBox label="Net Worth" value={inr(netWorth)} color={netWorth >= 0 ? "text-green-700" : "text-red-600"} />
+                  <StatBox label="Total Liabilities"  value={inr(totalLiabilities)} color="text-red-600 dark:text-red-400" />
+                  <StatBox label="Net Worth" value={inr(netWorth)} color={netWorth >= 0 ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400"} />
                 </div>
                 <div className="grid grid-cols-3 gap-2 mb-2">
                   <StatBox label="Monthly Salary"   value={inr(salary)} />
                   <StatBox label="Other Income"     value={inr(otherInc)} />
-                  <StatBox label="Monthly Expenses" value={inr(expenses)} color="text-red-600" />
+                  <StatBox label="Monthly Expenses" value={inr(expenses)} color="text-red-600 dark:text-red-400" />
                 </div>
                 <div className="grid grid-cols-3 gap-2 mb-2">
                   <StatBox label="Lump Sum Available" value={inr(fs?.lump_sum_available)} />
@@ -637,15 +640,15 @@ export function ClientsDashboard() {
                   <StatBox label="Annual Vacation"    value={inr(fs?.annual_vacation_expenses)} />
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <StatBox label="Monthly Surplus" value={inr(surplus)} color={surplus >= 0 ? "text-green-700" : "text-red-600"} />
-                  <StatBox label="Savings Rate" value={`${savingsRate.toFixed(1)}%`} color={savingsRate >= 20 ? "text-green-700" : savingsRate >= 10 ? "text-orange-600" : "text-red-600"} />
+                  <StatBox label="Monthly Surplus" value={inr(surplus)} color={surplus >= 0 ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400"} />
+                  <StatBox label="Savings Rate" value={`${savingsRate.toFixed(1)}%`} color={savingsRate >= 20 ? "text-green-700 dark:text-green-400" : savingsRate >= 10 ? "text-orange-600 dark:text-orange-400" : "text-red-600 dark:text-red-400"} />
                 </div>
               </div>
             </div>
 
             {/* ── Tabs ── */}
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-              <div className="flex border-b border-gray-200 px-4 pt-3">
+            <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+              <div className="flex border-b border-gray-200 px-4 pt-3 dark:border-gray-700">
                 {(["overview", "kids", "liabilities"] as const).map(tab => (
                   <button key={tab} onClick={() => setActiveTab(tab)} className={activeTab === tab ? ACTIVE_TAB : IDLE_TAB}>
                     {tab === "overview" ? "Overview" : tab === "kids" ? "Kid's Details" : "Liabilities & Goals"}
@@ -760,7 +763,7 @@ export function ClientsDashboard() {
                 {activeTab === "kids" && (
                   <>
                     <SectionLabel icon="👶" text="Children" />
-                    {kids.length === 0 ? <p className="text-xs text-gray-400 italic">No children recorded.</p> : (
+                    {kids.length === 0 ? <p className="text-xs italic text-gray-400 dark:text-gray-500">No children recorded.</p> : (
                       <KvGrid items={Object.fromEntries(kids.map(k => [`${k.child_name} (${k.Gender})`, `DOB: ${k.child_dob || "—"}`]))} />
                     )}
 
@@ -796,13 +799,13 @@ export function ClientsDashboard() {
                       Type: l.type, "Outstanding": inr(l.outstanding_balance),
                       "EMI / mo": inr(l.emi_amount), "Interest Rate": pct(l.interest_rate),
                     })) : []} />
-                    {liabilities.length === 0 && <p className="text-xs text-gray-400 italic">No liabilities recorded.</p>}
+                    {liabilities.length === 0 && <p className="text-xs italic text-gray-400 dark:text-gray-500">No liabilities recorded.</p>}
 
                     <SectionLabel icon="🎯" text="Financial Goals" />
                     <DataTable rows={goals.length ? goals.map(g => ({
                       Goal: g.goal_name, "Capital Required": inr(g.capital_required_today), "Target Year": String(g.target_year),
                     })) : []} />
-                    {goals.length === 0 && <p className="text-xs text-gray-400 italic">No financial goals recorded.</p>}
+                    {goals.length === 0 && <p className="text-xs italic text-gray-400 dark:text-gray-500">No financial goals recorded.</p>}
                   </>
                 )}
 

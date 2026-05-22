@@ -88,15 +88,15 @@ function displayFundingType(t: string): string {
 
 function fundingBadgeClass(displayType: string): string {
   const d = displayType.toUpperCase();
-  if (d.includes("SIP")) return "bg-sky-100 text-sky-800";
-  if (d.includes("FREED")) return "bg-amber-100 text-amber-900";
-  if (d.includes("LUMP")) return "bg-emerald-100 text-emerald-800";
-  if (d.includes("SSY")) return "bg-violet-100 text-violet-800";
-  if (d.includes("RSU")) return "bg-orange-50 text-orange-800";
+  if (d.includes("SIP")) return "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-200";
+  if (d.includes("FREED")) return "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200";
+  if (d.includes("LUMP")) return "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200";
+  if (d.includes("SSY")) return "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-200";
+  if (d.includes("RSU")) return "bg-orange-50 text-orange-800 dark:bg-orange-950 dark:text-orange-200";
   if (d === "EPF" || d === "PPF" || d === "NPS" || d === "ULIP")
-    return "bg-purple-100 text-purple-900";
-  if (d.includes("RETIREMENT")) return "bg-purple-100 text-purple-900";
-  return "bg-slate-100 text-slate-800";
+    return "bg-purple-100 text-purple-900 dark:bg-purple-950 dark:text-purple-200";
+  if (d.includes("RETIREMENT")) return "bg-purple-100 text-purple-900 dark:bg-purple-950 dark:text-purple-200";
+  return "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200";
 }
 
 function RetirementSchemeBreakdown({
@@ -107,7 +107,7 @@ function RetirementSchemeBreakdown({
   breakdown: SchemeBreakdownRow[];
 }) {
   return (
-    <tr className="bg-violet-50/60">
+    <tr className="bg-violet-50/60 dark:bg-violet-950/30">
       <td colSpan={6} className="px-3.5 py-3">
         <div className="mb-2.5 flex flex-wrap items-center gap-2">
           <span
@@ -118,8 +118,8 @@ function RetirementSchemeBreakdown({
           >
             Retirement Schemes
           </span>
-          <span className="text-[0.8rem] text-slate-500">Total future value:</span>
-          <strong className="text-purple-900">{fmtInr(totalFv)}</strong>
+          <span className="text-[0.8rem] text-slate-500 dark:text-slate-400">Total future value:</span>
+          <strong className="text-purple-900 dark:text-purple-300">{fmtInr(totalFv)}</strong>
         </div>
         <div className="flex flex-wrap gap-2.5">
           {breakdown.map((s, j) => {
@@ -128,7 +128,7 @@ function RetirementSchemeBreakdown({
             return (
               <div
                 key={j}
-                className="min-w-[130px] rounded-lg border border-violet-200 bg-white px-3.5 py-2.5"
+                className="min-w-[130px] rounded-lg border border-violet-200 bg-white px-3.5 py-2.5 dark:border-violet-800 dark:bg-gray-900"
               >
                 <span
                   className={cn(
@@ -140,18 +140,18 @@ function RetirementSchemeBreakdown({
                 </span>
                 <div className="flex gap-5 text-[0.8rem]">
                   <div>
-                    <div className="mb-0.5 text-[0.68rem] font-medium uppercase tracking-wide text-slate-500">
+                    <div className="mb-0.5 text-[0.68rem] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
                       Current value
                     </div>
-                    <div className="font-semibold text-slate-800">
+                    <div className="font-semibold text-slate-800 dark:text-slate-200">
                       {fmtInr(s.amount ?? undefined)}
                     </div>
                   </div>
                   <div>
-                    <div className="mb-0.5 text-[0.68rem] font-medium uppercase tracking-wide text-slate-500">
+                    <div className="mb-0.5 text-[0.68rem] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
                       Future value
                     </div>
-                    <div className="font-bold text-purple-900">
+                    <div className="font-bold text-purple-900 dark:text-purple-300">
                       {fmtInr(s.fv ?? undefined)}
                     </div>
                   </div>
@@ -184,8 +184,8 @@ function ReviewSectionTitle({
   children: React.ReactNode;
 }) {
   return (
-    <div className="mb-3.5 flex items-center gap-2 border-b-2 border-sky-200 pb-1.5 text-[0.82rem] font-bold uppercase tracking-[0.07em] text-[#2b6cb0]">
-      <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded bg-gray-900 text-white">
+    <div className="mb-3.5 flex items-center gap-2 border-b-2 border-sky-200 pb-1.5 text-[0.82rem] font-bold uppercase tracking-[0.07em] text-[#2b6cb0] dark:border-sky-800 dark:text-sky-300">
+      <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900">
         <Icon className="h-3 w-3" strokeWidth={2.5} />
       </span>
       {children}
@@ -203,12 +203,12 @@ function KvGrid({
       {items.map(({ label, value }) => (
         <div
           key={label}
-          className="rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2.5"
+          className="rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2.5 dark:border-slate-700 dark:bg-slate-800/60"
         >
-          <div className="mb-1 text-[0.72rem] font-medium uppercase tracking-wide text-slate-500">
+          <div className="mb-1 text-[0.72rem] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
             {label}
           </div>
-          <div className="break-words text-[0.95rem] font-semibold text-slate-700">
+          <div className="break-words text-[0.95rem] font-semibold text-slate-700 dark:text-slate-200">
             {value}
           </div>
         </div>
@@ -220,7 +220,7 @@ function KvGrid({
 function FundingTable({ rows }: { rows: FundedFromRow[] }) {
   if (!rows.length) {
     return (
-      <span className="text-[0.8rem] text-slate-400">No allocation recorded</span>
+      <span className="text-[0.8rem] text-slate-400 dark:text-slate-500">No allocation recorded</span>
     );
   }
 
@@ -228,7 +228,7 @@ function FundingTable({ rows }: { rows: FundedFromRow[] }) {
     <div className="overflow-x-auto">
       <table className="min-w-full border-collapse text-[0.83rem]">
         <thead>
-          <tr className="border-b-2 border-slate-200 bg-slate-100 text-left text-slate-600">
+          <tr className="border-b-2 border-slate-200 bg-slate-100 text-left text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
             <th className="whitespace-nowrap px-2.5 py-1.5 font-semibold">Source</th>
             <th className="whitespace-nowrap px-2.5 py-1.5 font-semibold">Amount</th>
             <th className="whitespace-nowrap px-2.5 py-1.5 font-semibold">From</th>
@@ -252,7 +252,7 @@ function FundingTable({ rows }: { rows: FundedFromRow[] }) {
                 );
               }
               return (
-                <tr key={i} className="border-b border-slate-200 bg-violet-50/40">
+                <tr key={i} className="border-b border-slate-200 bg-violet-50/40 dark:border-slate-700 dark:bg-violet-950/30">
                   <td className="px-2.5 py-1.5">
                     <span
                       className={cn(
@@ -263,10 +263,10 @@ function FundingTable({ rows }: { rows: FundedFromRow[] }) {
                       Retirement Schemes
                     </span>
                   </td>
-                  <td colSpan={4} className="px-2.5 py-1.5 text-slate-500">
+                  <td colSpan={4} className="px-2.5 py-1.5 text-slate-500 dark:text-slate-400">
                     Existing retirement investments
                   </td>
-                  <td className="px-2.5 py-1.5 font-semibold text-purple-900">
+                  <td className="px-2.5 py-1.5 font-semibold text-purple-900 dark:text-purple-300">
                     {fmtInr(f.total_fv as number | undefined)}
                   </td>
                 </tr>
@@ -294,8 +294,8 @@ function FundingTable({ rows }: { rows: FundedFromRow[] }) {
             else if (principal != null) amtCell = fmtInr(principal);
 
             return (
-              <tr key={i} className="border-b border-slate-200 hover:bg-slate-50">
-                <td className="whitespace-nowrap px-2.5 py-1.5 text-slate-800">
+              <tr key={i} className="border-b border-slate-200 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800/50">
+                <td className="whitespace-nowrap px-2.5 py-1.5 text-slate-800 dark:text-slate-200">
                   <span
                     className={cn(
                       "inline-block rounded-xl px-2.5 py-0.5 text-[0.75rem] font-bold",
@@ -305,7 +305,7 @@ function FundingTable({ rows }: { rows: FundedFromRow[] }) {
                     {display}
                   </span>
                   {source ? (
-                    <div className="mt-1 text-[0.78rem] text-slate-500">{source}</div>
+                    <div className="mt-1 text-[0.78rem] text-slate-500 dark:text-slate-400">{source}</div>
                   ) : null}
                 </td>
                 <td className="whitespace-nowrap px-2.5 py-1.5">{amtCell}</td>
@@ -340,23 +340,23 @@ function PlanGeneratingOverlay({ activeStep }: { activeStep: number }) {
       aria-modal="true"
       aria-labelledby="plan-overlay-title"
     >
-      <div className="mx-4 w-full max-w-[460px] rounded-2xl bg-white px-10 py-10 text-center shadow-2xl">
+      <div className="mx-4 w-full max-w-[460px] rounded-2xl bg-white px-10 py-10 text-center shadow-2xl dark:bg-gray-900">
         <div
-          className="mx-auto mb-5 h-14 w-14 animate-spin rounded-full border-[5px] border-slate-200 border-t-[#1a365d]"
+          className="mx-auto mb-5 h-14 w-14 animate-spin rounded-full border-[5px] border-slate-200 border-t-[#1a365d] dark:border-slate-700 dark:border-t-sky-400"
           aria-hidden
         />
         <h2
           id="plan-overlay-title"
-          className="mb-1.5 text-lg font-bold text-slate-900"
+          className="mb-1.5 text-lg font-bold text-slate-900 dark:text-slate-100"
         >
           Generating Financial Plan
         </h2>
-        <p className="mb-6 text-[0.83rem] text-slate-500">
+        <p className="mb-6 text-[0.83rem] text-slate-500 dark:text-slate-400">
           Running AI workflow… this may take 1–3 minutes.
         </p>
-        <div className="mb-5 h-1.5 overflow-hidden rounded-full bg-slate-200">
+        <div className="mb-5 h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
           <div
-            className="h-full rounded-full bg-[#1a365d] transition-[width] duration-1000 ease-out"
+            className="h-full rounded-full bg-[#1a365d] transition-[width] duration-1000 ease-out dark:bg-sky-500"
             style={{ width: `${pct}%` }}
           />
         </div>
@@ -366,9 +366,9 @@ function PlanGeneratingOverlay({ activeStep }: { activeStep: number }) {
               key={label}
               className={cn(
                 "flex items-center gap-2.5 py-1 transition-colors",
-                i < activeStep && "font-medium text-emerald-700",
-                i === activeStep && "font-semibold text-slate-900",
-                i > activeStep && "text-slate-400",
+                i < activeStep && "font-medium text-emerald-700 dark:text-emerald-400",
+                i === activeStep && "font-semibold text-slate-900 dark:text-slate-100",
+                i > activeStep && "text-slate-400 dark:text-slate-500",
               )}
             >
               <span
@@ -376,7 +376,7 @@ function PlanGeneratingOverlay({ activeStep }: { activeStep: number }) {
                   "h-2 w-2 shrink-0 rounded-full",
                   i < activeStep && "bg-emerald-500",
                   i === activeStep && "bg-[#1a365d] shadow-[0_0_0_3px_rgba(26,54,93,0.2)]",
-                  i > activeStep && "bg-slate-200",
+                  i > activeStep && "bg-slate-200 dark:bg-slate-600",
                 )}
               />
               {label}
@@ -494,13 +494,13 @@ export function FinancialPlanPanel({
     <>
       {loading ? <PlanGeneratingOverlay activeStep={overlayStep} /> : null}
 
-      <div className="mb-6 overflow-hidden rounded-xl border border-slate-200 bg-[#f0f4f8] shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-[#1a365d] bg-white px-5 py-4 shadow-sm">
+      <div className="mb-6 overflow-hidden rounded-xl border border-slate-200 bg-[#f0f4f8] shadow-sm dark:border-slate-700 dark:bg-slate-900/50">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-[#1a365d] bg-white px-5 py-4 shadow-sm dark:border-sky-800 dark:bg-slate-900">
           <div>
-            <p className="text-[0.72rem] font-bold uppercase tracking-widest text-[#1a365d]">
+            <p className="text-[0.72rem] font-bold uppercase tracking-widest text-[#1a365d] dark:text-sky-300">
               Financial Plan Generator
             </p>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
               Strategizing wealth, maximizing opportunities · Armstrong workflow
             </p>
           </div>
@@ -532,9 +532,9 @@ export function FinancialPlanPanel({
             <div
               className={cn(
                 "mb-4 rounded-lg px-4 py-3 text-sm font-medium",
-                status.type === "info" && "bg-sky-50 text-sky-800",
-                status.type === "success" && "bg-emerald-50 text-emerald-900",
-                status.type === "error" && "bg-red-50 text-red-800",
+                status.type === "info" && "bg-sky-50 text-sky-800 dark:bg-sky-950/50 dark:text-sky-200",
+                status.type === "success" && "bg-emerald-50 text-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-200",
+                status.type === "error" && "bg-red-50 text-red-800 dark:bg-red-950/50 dark:text-red-300",
               )}
             >
               {status.msg}
@@ -542,14 +542,14 @@ export function FinancialPlanPanel({
           ) : null}
 
           {error && status?.type !== "error" ? (
-            <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-800">
+            <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-800 dark:bg-red-950/40 dark:text-red-300">
               {error}
             </div>
           ) : null}
 
           {s ? (
-            <div className="rounded-xl border border-slate-200/80 bg-white px-6 py-7 shadow-sm">
-              <h2 className="mb-5 text-base font-semibold uppercase tracking-wider text-slate-700">
+            <div className="rounded-xl border border-slate-200/80 bg-white px-6 py-7 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+              <h2 className="mb-5 text-base font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
                 Plan review
               </h2>
 
@@ -557,8 +557,8 @@ export function FinancialPlanPanel({
               <div className="mb-7">
                 <ReviewSectionTitle icon={Heart}>Financial health</ReviewSectionTitle>
                 {redFlag ? (
-                  <div className="mb-3.5 border-l-4 border-amber-500 bg-amber-50 py-2.5 pl-3.5 pr-3 text-amber-950">
-                    <p className="mb-1 text-[0.78rem] font-bold uppercase tracking-wide text-amber-900">
+                  <div className="mb-3.5 border-l-4 border-amber-500 bg-amber-50 py-2.5 pl-3.5 pr-3 text-amber-950 dark:bg-amber-950/40 dark:text-amber-100">
+                    <p className="mb-1 text-[0.78rem] font-bold uppercase tracking-wide text-amber-900 dark:text-amber-300">
                       Spending ratio alert
                     </p>
                     <p className="text-[0.85rem] leading-relaxed">
@@ -576,14 +576,14 @@ export function FinancialPlanPanel({
                           className={cn(
                             savingPct != null &&
                               savingPct >= 20 &&
-                              "text-emerald-700",
+                              "text-emerald-700 dark:text-emerald-400",
                             savingPct != null &&
                               savingPct < 20 &&
                               savingPct >= 10 &&
-                              "text-orange-700",
+                              "text-orange-700 dark:text-orange-400",
                             savingPct != null &&
                               savingPct < 10 &&
-                              "text-red-700",
+                              "text-red-700 dark:text-red-400",
                           )}
                         >
                           {savingPct != null ? `${savingPct.toFixed(1)}%` : "—"}
@@ -597,14 +597,14 @@ export function FinancialPlanPanel({
                           className={cn(
                             expensePct != null &&
                               expensePct <= 60 &&
-                              "text-emerald-700",
+                              "text-emerald-700 dark:text-emerald-400",
                             expensePct != null &&
                               expensePct > 60 &&
                               expensePct <= 70 &&
-                              "text-orange-700",
+                              "text-orange-700 dark:text-orange-400",
                             expensePct != null &&
                               expensePct > 70 &&
-                              "text-red-700",
+                              "text-red-700 dark:text-red-400",
                           )}
                         >
                           {expensePct != null ? `${expensePct.toFixed(1)}%` : "—"}
@@ -618,8 +618,8 @@ export function FinancialPlanPanel({
                           className={cn(
                             "inline-block rounded px-2 py-0.5 text-[0.8rem] font-semibold",
                             liqOk
-                              ? "border border-emerald-300 bg-emerald-50 text-emerald-800"
-                              : "border border-orange-300 bg-orange-50 text-orange-800",
+                              ? "border border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-200"
+                              : "border border-orange-300 bg-orange-50 text-orange-800 dark:border-orange-700 dark:bg-orange-950/50 dark:text-orange-200",
                           )}
                         >
                           {liqFlag || "—"}
@@ -633,8 +633,8 @@ export function FinancialPlanPanel({
                           className={cn(
                             "inline-block rounded px-2 py-0.5 text-[0.8rem] font-semibold",
                             flexOk
-                              ? "border border-emerald-300 bg-emerald-50 text-emerald-800"
-                              : "border border-orange-300 bg-orange-50 text-orange-800",
+                              ? "border border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-200"
+                              : "border border-orange-300 bg-orange-50 text-orange-800 dark:border-orange-700 dark:bg-orange-950/50 dark:text-orange-200",
                           )}
                         >
                           {flex || "—"}
@@ -648,7 +648,7 @@ export function FinancialPlanPanel({
               {/* Risk */}
               <div className="mb-7">
                 <ReviewSectionTitle icon={Activity}>Risk appetite</ReviewSectionTitle>
-                <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-4 text-sm text-slate-800">
+                <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-4 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200">
                   {(() => {
                     const ra = s.risk_appetite as Record<string, unknown> | undefined;
                     const inner = ra?.risk_appetite as
@@ -665,11 +665,11 @@ export function FinancialPlanPanel({
                       inner && typeof inner === "object" ? inner.reason : undefined;
                     return (
                       <>
-                        <p className="font-semibold text-[#1a365d]">
+                        <p className="font-semibold text-[#1a365d] dark:text-sky-300">
                           {label ?? "—"}
                         </p>
                         {reason ? (
-                          <p className="mt-2 text-[0.85rem] leading-relaxed text-slate-600">
+                          <p className="mt-2 text-[0.85rem] leading-relaxed text-slate-600 dark:text-slate-400">
                             {reason}
                           </p>
                         ) : null}
@@ -689,7 +689,7 @@ export function FinancialPlanPanel({
                     {
                       label: "Monthly surplus",
                       value: (
-                        <span className="text-emerald-800">
+                        <span className="text-emerald-800 dark:text-emerald-400">
                           {fmtInr(s.monthly_surplus ?? undefined)}
                         </span>
                       ),
@@ -725,45 +725,45 @@ export function FinancialPlanPanel({
                         <div
                           key={`${g.goal_name}-${idx}`}
                           className={cn(
-                            "rounded-lg border bg-slate-50 p-3.5 sm:p-4",
+                            "rounded-lg border bg-slate-50 p-3.5 sm:p-4 dark:bg-slate-800/50",
                             partial
-                              ? "border-amber-300"
-                              : "border-slate-200",
+                              ? "border-amber-300 dark:border-amber-700"
+                              : "border-slate-200 dark:border-slate-700",
                           )}
                         >
                           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                            <strong className="text-[0.95rem] text-slate-900">
+                            <strong className="text-[0.95rem] text-slate-900 dark:text-slate-100">
                               {g.goal_name}
                             </strong>
                             <span
                               className={cn(
                                 "inline-block rounded-xl px-2.5 py-0.5 text-[0.75rem] font-bold uppercase",
                                 status === "funded" &&
-                                  "bg-emerald-50 text-emerald-800",
+                                  "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200",
                                 status === "partial_funded" &&
-                                  "bg-amber-50 text-amber-900",
+                                  "bg-amber-50 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200",
                                 status === "not_funded" &&
-                                  "bg-red-50 text-red-800",
+                                  "bg-red-50 text-red-800 dark:bg-red-950/50 dark:text-red-300",
                               )}
                             >
                               {status.replaceAll("_", " ")}
                             </span>
                           </div>
-                          <div className="mb-2.5 text-[0.82rem] text-slate-500">
+                          <div className="mb-2.5 text-[0.82rem] text-slate-500 dark:text-slate-400">
                             Target year:{" "}
-                            <strong className="text-slate-800">
+                            <strong className="text-slate-800 dark:text-slate-200">
                               {g.target_year ?? "—"}
                             </strong>
                             {" · "}
                             Target corpus:{" "}
-                            <strong className="text-slate-800">
+                            <strong className="text-slate-800 dark:text-slate-200">
                               {fmtInr(g.target_corpus)}
                             </strong>
                             {partial && gap > 0 ? (
                               <>
                                 {" · "}
                                 Corpus gap:{" "}
-                                <strong className="text-orange-800">
+                                <strong className="text-orange-800 dark:text-orange-400">
                                   {fmtInr(gap)}
                                 </strong>
                               </>
@@ -777,8 +777,8 @@ export function FinancialPlanPanel({
                           {(status === "partial_funded" ||
                             status === "not_funded") &&
                           (g.notes?.length || gap > 0) ? (
-                            <div className="mt-3 border-l-4 border-amber-500 bg-amber-50 py-2.5 pl-3 pr-2 text-amber-950">
-                              <p className="mb-1 text-[0.78rem] font-bold uppercase tracking-wide text-amber-900">
+                            <div className="mt-3 border-l-4 border-amber-500 bg-amber-50 py-2.5 pl-3 pr-2 text-amber-950 dark:bg-amber-950/40 dark:text-amber-100">
+                              <p className="mb-1 text-[0.78rem] font-bold uppercase tracking-wide text-amber-900 dark:text-amber-300">
                                 Action required
                               </p>
                               <div className="text-[0.85rem] leading-relaxed">
@@ -810,10 +810,10 @@ export function FinancialPlanPanel({
                   <ReviewSectionTitle icon={Landmark}>
                     Prioritized goals
                   </ReviewSectionTitle>
-                  <div className="overflow-x-auto rounded-lg border border-slate-200">
+                  <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
                     <table className="min-w-full border-collapse text-[0.83rem]">
                       <thead>
-                        <tr className="border-b-2 border-slate-200 bg-slate-100 text-left text-slate-600">
+                        <tr className="border-b-2 border-slate-200 bg-slate-100 text-left text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
                           <th className="px-2.5 py-1.5 font-semibold">Goal</th>
                           <th className="px-2.5 py-1.5 font-semibold">Score</th>
                           <th className="px-2.5 py-1.5 font-semibold">Year</th>
@@ -824,9 +824,9 @@ export function FinancialPlanPanel({
                         {s.sorted_goals_preview.map((row, i) => (
                           <tr
                             key={i}
-                            className="border-b border-slate-200 hover:bg-slate-50"
+                            className="border-b border-slate-200 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800/50"
                           >
-                            <td className="px-2.5 py-1.5 text-slate-800">
+                            <td className="px-2.5 py-1.5 text-slate-800 dark:text-slate-200">
                               {row.goal_name}
                             </td>
                             <td className="px-2.5 py-1.5">

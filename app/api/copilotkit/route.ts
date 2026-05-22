@@ -10,9 +10,7 @@ import { tavily } from "@tavily/core";
 import type { LanguageModel } from "ai";
 import { NextRequest } from "next/server";
 import OpenAI from "openai";
-
-/** Must match LangGraphAGUIAgent name in agent/main.py and layout.tsx */
-export const LANGGRAPH_AGENT_ID = "dashboard_agent";
+import { LANGGRAPH_AGENT_ID } from "@/lib/langgraph-agent";
 
 const langGraphAgentUrl = process.env.LANGGRAPH_AGENT_URL?.trim();
 const useLangGraph = Boolean(langGraphAgentUrl);

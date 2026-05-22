@@ -6,7 +6,6 @@ import {
   ChevronRight,
   Menu,
   Search,
-  Users,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -42,12 +41,14 @@ function ClientRow({
       <button
         type="button"
         title={client.name}
+        aria-current={selected ? "true" : undefined}
+        data-selected={selected ? "true" : undefined}
         onClick={onClick}
         className={cn(
-          "mx-auto flex h-10 w-10 items-center justify-center rounded-lg border text-xs font-bold transition-colors",
+          "mx-auto flex h-10 w-10 items-center justify-center rounded-[length:var(--radius-control)] text-xs font-semibold transition-all duration-200 ease-out",
           selected
-            ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-200"
-            : "border-gray-100 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700",
+            ? "bg-brand text-brand-foreground shadow-elevation-sm"
+            : "border border-border bg-surface text-body hover:bg-muted",
         )}
       >
         {clientInitials(client.name)}
@@ -59,14 +60,17 @@ function ClientRow({
     <button
       type="button"
       onClick={onClick}
+      aria-current={selected ? "true" : undefined}
+      data-selected={selected ? "true" : undefined}
       className={cn(
-        "w-full rounded-lg border px-4 py-3 text-left text-sm font-medium transition-colors",
+        "group w-full rounded-[length:var(--radius-control)] border border-transparent px-3 py-3.5 text-left transition-all duration-200 ease-out",
+        "border-l-[3px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40",
         selected
-          ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-200"
-          : "border-gray-100 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700",
+          ? "border-l-brand bg-brand-muted shadow-elevation-sm"
+          : "border-l-transparent hover:bg-muted/70",
       )}
     >
-      {client.name}
+      <span className="block text-sm font-semibold text-heading">{client.name}</span>
     </button>
   );
 }
@@ -115,15 +119,20 @@ export function DashboardSidebar({
     <>
       <div
         className={cn(
-          "flex shrink-0 items-center border-b border-gray-200 dark:border-gray-700",
-          railCollapsed ? "justify-center px-1 py-2" : "justify-end px-2 py-2",
+          "flex shrink-0 items-center border-b border-border",
+          railCollapsed ? "justify-center px-1 py-2" : "justify-between gap-2 px-3 py-2",
         )}
       >
+        {!railCollapsed && (
+          <h2 className="text-sm font-semibold tracking-tight text-heading">
+            Clients
+          </h2>
+        )}
         <button
           type="button"
           onClick={toggleCollapsed}
           aria-label={railCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[length:var(--radius-control)] border border-border bg-surface text-muted-foreground transition-colors duration-200 ease-out hover:bg-muted hover:text-heading"
         >
           {railCollapsed ? (
             <ChevronRight className="h-4 w-4" aria-hidden />
@@ -134,13 +143,10 @@ export function DashboardSidebar({
       </div>
 
       {!railCollapsed && (
-        <div className="shrink-0 space-y-2 border-b border-gray-200 px-3 py-3 dark:border-gray-700">
-          <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-            Clients
-          </h2>
+        <div className="shrink-0 border-b border-border px-4 py-4">
           <div className="relative">
             <Search
-              className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
               aria-hidden
             />
             <input
@@ -149,14 +155,14 @@ export function DashboardSidebar({
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search clients…"
               aria-label="Search clients"
-              className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2 pl-9 pr-8 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-500"
+              className="w-full rounded-[length:var(--radius-control)] border border-border bg-canvas py-2.5 pl-10 pr-9 text-sm text-heading placeholder:text-muted-foreground transition-colors duration-200 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/25"
             />
             {searchQuery.trim() !== "" && (
               <button
                 type="button"
                 aria-label="Clear search"
                 onClick={() => setSearchQuery("")}
-                className="absolute right-1.5 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-600 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+                className="absolute right-2 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-heading"
               >
                 <X className="h-3.5 w-3.5" aria-hidden />
               </button>
@@ -166,12 +172,12 @@ export function DashboardSidebar({
       )}
 
       {railCollapsed && (
-        <div className="flex shrink-0 justify-center border-b border-gray-200 py-2 dark:border-gray-700">
+        <div className="flex shrink-0 justify-center border-b border-border py-2">
           <button
             type="button"
             onClick={handleSearchExpand}
             aria-label="Expand sidebar to search clients"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-[length:var(--radius-control)] border border-border bg-surface text-muted-foreground transition-colors duration-200 ease-out hover:bg-muted hover:text-brand"
           >
             <Search className="h-4 w-4" aria-hidden />
           </button>
@@ -180,31 +186,26 @@ export function DashboardSidebar({
 
       <div
         className={cn(
-          "flex flex-1 flex-col gap-2 overflow-y-auto p-2",
-          railCollapsed && "items-center",
+          "flex flex-1 flex-col gap-1.5 overflow-y-auto p-2",
+          railCollapsed && "items-center px-1",
+          !railCollapsed && "px-2",
         )}
       >
-        {railCollapsed && (
-          <Users
-            className="h-4 w-4 text-gray-400 dark:text-gray-500"
-            aria-hidden
-          />
-        )}
         {loadingList && (
-          <div className="flex justify-center py-8">
-            <div className="h-6 w-6 animate-spin rounded-full border-b-2 border-blue-500" />
+          <div className="flex justify-center py-10">
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-brand/30 border-t-brand" />
           </div>
         )}
         {error && (
           <div
             className={cn(
-              "rounded-lg border border-red-100 bg-red-50 px-2 py-2 text-xs text-red-500 dark:border-red-900 dark:bg-red-950/40",
+              "rounded-[length:var(--radius-control)] border border-loss/20 bg-loss-muted px-3 py-2 text-xs text-loss",
               railCollapsed && "hidden",
             )}
           >
             {error}
             <br />
-            <span className="text-gray-400">
+            <span className="text-muted-foreground">
               Is the FastAPI server running on port 8000?
             </span>
           </div>
@@ -212,7 +213,7 @@ export function DashboardSidebar({
         {!loadingList && !error && clients.length === 0 && (
           <p
             className={cn(
-              "px-2 text-xs text-gray-400",
+              "px-2 py-4 text-center text-xs text-muted-foreground",
               railCollapsed && "sr-only",
             )}
           >
@@ -225,7 +226,7 @@ export function DashboardSidebar({
           filteredClients.length === 0 && (
             <p
               className={cn(
-                "px-2 text-xs text-gray-400",
+                "px-2 py-4 text-center text-xs text-muted-foreground",
                 railCollapsed && "sr-only",
               )}
             >
@@ -247,7 +248,7 @@ export function DashboardSidebar({
 
   if (!hydrated) {
     return (
-      <aside className="hidden w-56 shrink-0 md:block" aria-hidden>
+      <aside className="hidden w-64 shrink-0 md:block" aria-hidden>
         <div className="h-full min-h-[200px]" />
       </aside>
     );
@@ -259,7 +260,7 @@ export function DashboardSidebar({
         <button
           type="button"
           aria-label="Close sidebar"
-          className="fixed inset-0 z-30 bg-black/40 md:hidden"
+          className="fixed inset-0 z-30 bg-heading/40 backdrop-blur-[2px] md:hidden"
           onClick={closeMobile}
         />
       )}
@@ -269,9 +270,9 @@ export function DashboardSidebar({
           type="button"
           onClick={toggleCollapsed}
           aria-label="Open clients sidebar"
-          className="fixed bottom-4 left-4 z-20 inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-md hover:bg-gray-50 md:hidden dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
+          className="fixed bottom-5 left-5 z-20 inline-flex items-center gap-2 rounded-full border border-border bg-surface px-4 py-2.5 text-sm font-medium text-heading shadow-elevation-md transition-colors duration-200 hover:bg-muted md:hidden"
         >
-          <Menu className="h-4 w-4" aria-hidden />
+          <Menu className="h-4 w-4 text-brand" aria-hidden />
           Clients
         </button>
       )}
@@ -280,14 +281,15 @@ export function DashboardSidebar({
         role="complementary"
         aria-label="Clients sidebar"
         className={cn(
-          "flex shrink-0 flex-col overflow-hidden border-gray-200 bg-white transition-[width,transform] duration-300 ease-in-out dark:border-gray-700 dark:bg-gray-900",
-          railCollapsed ? "w-14" : "w-56",
+          "app-chrome",
+          "flex shrink-0 flex-col overflow-hidden bg-surface transition-[width,transform] duration-300 ease-out",
+          railCollapsed ? "w-14" : "w-64",
           isMobile
             ? cn(
-                "fixed inset-y-0 left-0 z-40 border-r shadow-xl",
+                "fixed inset-y-0 left-0 z-40 border-r border-border shadow-elevation-lg",
                 mobileOpen ? "translate-x-0" : "-translate-x-full",
               )
-            : "relative border-r",
+            : "relative border-r border-border",
         )}
       >
         {isMobile && mobileOpen && (
@@ -295,7 +297,7 @@ export function DashboardSidebar({
             type="button"
             onClick={closeMobile}
             aria-label="Close sidebar"
-            className="absolute right-2 top-3 z-10 inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+            className="absolute right-2 top-3 z-10 inline-flex h-7 w-7 items-center justify-center rounded-[length:var(--radius-control)] text-muted-foreground transition-colors hover:bg-muted"
           >
             <X className="h-4 w-4" />
           </button>

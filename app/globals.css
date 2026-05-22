@@ -4,11 +4,51 @@
 
 @custom-variant dark (&:is(.dark *));
 
-@theme {
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* ── App chrome (navbar + client sidebar only) ───────────────────────────── */
+:root {
+  --canvas: #f4f6f8;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --border-subtle: #e4e9ef;
+  --border-hairline: rgba(15, 23, 42, 0.06);
+  --brand: #0f766e;
+  --brand-hover: #0d6560;
+  --brand-muted: #e8f5f3;
+  --brand-foreground: #ffffff;
+  --heading: #1b3a5c;
+  --text-body: #334155;
+  --text-muted: #64748b;
+  --text-micro: #94a3b8;
+  --radius-card: 12px;
+  --radius-control: 8px;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.06), 0 2px 4px rgba(15, 23, 42, 0.04);
+  --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.1);
+  --duration-fast: 150ms;
+  --duration-normal: 220ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+.dark {
+  --canvas: #12161c;
+  --surface: #1a2029;
+  --surface-raised: #222a36;
+  --border-subtle: #2d3748;
+  --border-hairline: rgba(255, 255, 255, 0.06);
+  --brand: #2dd4bf;
+  --brand-hover: #5eead4;
+  --brand-muted: rgba(45, 212, 191, 0.12);
+  --brand-foreground: #0f1419;
+  --heading: #f1f5f9;
+  --text-body: #cbd5e1;
+  --text-muted: #94a3b8;
+  --text-micro: #64748b;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.25);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+/* ── Global app (pre-redesign) ───────────────────────────────────────────── */
 :root {
   --copilot-kit-primary-color: #3b82f6;
   --copilot-kit-contrast-color: white;
@@ -21,6 +61,7 @@
   --copilot-kit-response-button-background-color: white;
   --copilot-kit-border-color: #e2e8f0;
   --copilot-kit-shadow-color: rgba(0, 0, 0, 0.1);
+  --copilot-kit-input-background-color: #f8fafc;
   --copilot-kit-input-border-color: #e2e8f0;
   --copilot-kit-input-focus-border-color: #3b82f6;
   --copilot-kit-input-focus-ring-color: rgba(59, 130, 246, 0.5);
@@ -75,6 +116,7 @@
   --copilot-kit-response-button-background-color: #1e293b;
   --copilot-kit-border-color: #334155;
   --copilot-kit-shadow-color: rgba(0, 0, 0, 0.3);
+  --copilot-kit-input-background-color: #1e293b;
   --copilot-kit-input-border-color: #334155;
   --copilot-kit-input-focus-border-color: #3b82f6;
   --copilot-kit-input-focus-ring-color: rgba(59, 130, 246, 0.5);
@@ -113,9 +155,22 @@
   --sidebar-ring: oklch(0.553 0.013 58.071);
 }
 
+@theme {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-muted: var(--brand-muted);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-heading: var(--heading);
+  --color-body: var(--text-body);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
@@ -150,6 +205,9 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  --shadow-elevation-sm: var(--shadow-sm);
+  --shadow-elevation-md: var(--shadow-md);
+  --shadow-elevation-lg: var(--shadow-lg);
 }
 
 @layer base {
@@ -161,7 +219,28 @@
   }
 }
 
-/* Custom CopilotKit styling to match dashboard */
+/* Navbar + client sidebar typography (Plus Jakarta) */
+.app-chrome {
+  font-family: var(--font-jakarta), var(--font-sans), sans-serif;
+}
+
+@layer utilities {
+  .app-chrome .font-tabular {
+    font-family: var(--font-plex-mono), var(--font-mono), monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  .shadow-elevation-sm {
+    box-shadow: var(--shadow-sm);
+  }
+  .shadow-elevation-md {
+    box-shadow: var(--shadow-md);
+  }
+  .shadow-elevation-lg {
+    box-shadow: var(--shadow-lg);
+  }
+}
+
+/* CopilotKit (pre-redesign) */
 .copilotKitSidebar .copilotKitWindow {
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
 }
@@ -177,9 +256,9 @@
   margin-top: 15px;
 }
 
-/* Hide CopilotKit "Powered by" watermark (no supported disable prop in v1 sidebar) */
-.copilotKitSidebar .poweredByContainer,
-.copilotKitPopup .poweredByContainer {
+/* Hide branding only — do not target .poweredByContainer (CopilotKit puts that class on the input wrapper). */
+.copilotKitSidebar .poweredBy,
+.copilotKitPopup .poweredBy {
   display: none !important;
   height: 0 !important;
   min-height: 0 !important;

@@ -4,6 +4,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { Header } from "../Header";
+import { ThemeProvider } from "../providers/ThemeProvider";
 
 vi.mock("next/image", () => ({
   default: (props: { alt: string; src: string }) => (
@@ -12,16 +13,24 @@ vi.mock("next/image", () => ({
   ),
 }));
 
+function renderHeader() {
+  return render(
+    <ThemeProvider>
+      <Header />
+    </ThemeProvider>,
+  );
+}
+
 describe("Header", () => {
   it("renders Armstrong Capital logo with correct alt text", () => {
-    render(<Header />);
+    renderHeader();
     const logo = screen.getByAltText("Armstrong Capital");
     expect(logo).toBeTruthy();
     expect(logo.getAttribute("src")).toContain("armstrong-capital-logo");
   });
 
-  it("does not duplicate logo in sidebar scope", () => {
-    render(<Header />);
-    expect(screen.getAllByAltText("Armstrong Capital")).toHaveLength(1);
+  it("renders theme toggle", () => {
+    renderHeader();
+    expect(screen.getByRole("button", { name: /toggle theme|switch to/i })).toBeTruthy();
   });
 });

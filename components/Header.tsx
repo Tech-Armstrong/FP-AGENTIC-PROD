@@ -1,29 +1,33 @@
 "use client";
 
 import Image from "next/image";
+import { ThemeToggle } from "./ThemeToggle";
 
 export function Header() {
   return (
-    <header className="border-b border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
-      <div className="mx-auto flex max-w-7xl items-center gap-5 px-4 py-4 sm:px-6 lg:px-8">
-        <div className="shrink-0 rounded-md bg-white dark:bg-gray-900">
-          <Image
-            src="/armstrong-capital-logo.png"
-            alt="Armstrong Capital"
-            width={480}
-            height={120}
-            className="h-20 w-auto max-w-[min(480px,55vw)] object-contain object-left sm:h-24"
-            priority
-          />
+    <header className="app-chrome sticky top-0 z-20 border-b border-border/80 bg-surface/95 shadow-elevation-sm backdrop-blur-sm">
+      <div className="mx-auto flex max-w-[90rem] items-center justify-between gap-6 px-5 py-3 sm:px-8 lg:px-10">
+        <div className="flex min-w-0 items-center gap-5">
+          <div className="shrink-0 rounded-[length:var(--radius-control)] bg-surface">
+            <Image
+              src="/armstrong-capital-logo.png"
+              alt="Armstrong Capital"
+              width={480}
+              height={120}
+              className="h-16 w-auto max-w-[min(400px,48vw)] object-contain object-left sm:h-[4.5rem]"
+              priority
+            />
+          </div>
+          <div className="hidden min-w-0 border-l border-border pl-5 sm:block">
+            <p className="text-micro text-xs font-medium uppercase tracking-widest">
+              Investor workspace
+            </p>
+            <h1 className="text-base font-semibold text-heading sm:text-lg">
+              Client Dashboard
+            </h1>
+          </div>
         </div>
-        <div className="min-w-0">
-          <h1 className="text-lg font-medium text-gray-900 dark:text-gray-100 sm:text-xl">
-            Client Dashboard
-          </h1>
-          <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-            Financial planning data with AI assistance
-          </p>
-        </div>
+        <ThemeToggle />
       </div>
     </header>
   );

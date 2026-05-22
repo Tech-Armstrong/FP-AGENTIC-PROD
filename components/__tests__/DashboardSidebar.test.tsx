@@ -59,9 +59,9 @@ describe("DashboardSidebar", () => {
     fireEvent.change(screen.getByRole("searchbox", { name: /search clients/i }), {
       target: { value: "jane" },
     });
-    expect(screen.getByRole("button", { name: "Jane Doe" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "John Smith" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Alice Wonder" })).toBeNull();
+    expect(screen.getByRole("button", { name: /Jane Doe/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /John Smith/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Alice Wonder/i })).toBeNull();
   });
 
   it("filters by record id", async () => {
@@ -76,8 +76,8 @@ describe("DashboardSidebar", () => {
     );
     const search = await screen.findByRole("searchbox", { name: /search clients/i });
     fireEvent.change(search, { target: { value: "rec2" } });
-    expect(screen.getByRole("button", { name: "John Smith" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Jane Doe" })).toBeNull();
+    expect(screen.getByRole("button", { name: /John Smith/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Jane Doe/i })).toBeNull();
   });
 
   it("clears search and restores full list", async () => {
@@ -92,12 +92,12 @@ describe("DashboardSidebar", () => {
     );
     const search = await screen.findByRole("searchbox", { name: /search clients/i });
     fireEvent.change(search, { target: { value: "jane" } });
-    expect(screen.queryByRole("button", { name: "John Smith" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /John Smith/i })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: /clear search/i }));
-    expect(screen.getByRole("button", { name: "Jane Doe" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "John Smith" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Alice Wonder" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Jane Doe/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /John Smith/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Alice Wonder/i })).toBeTruthy();
   });
 
   it("shows empty state when filter matches nothing", async () => {
@@ -113,7 +113,7 @@ describe("DashboardSidebar", () => {
     const search = await screen.findByRole("searchbox", { name: /search clients/i });
     fireEvent.change(search, { target: { value: "zzznomatch" } });
     expect(screen.getByText("No clients found")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Jane Doe" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Jane Doe/i })).toBeNull();
   });
 
   it("toggles between collapsed and expanded on button click", async () => {
@@ -129,7 +129,7 @@ describe("DashboardSidebar", () => {
     const sidebar = await screen.findByRole("complementary", {
       name: /clients sidebar/i,
     });
-    expect(sidebar.className).toMatch(/w-56/);
+    expect(sidebar.className).toMatch(/w-64/);
     expect(screen.getByRole("heading", { name: "Clients" })).toBeTruthy();
 
     fireEvent.click(
@@ -143,9 +143,44 @@ describe("DashboardSidebar", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Expand sidebar" }),
     );
-    expect(sidebar.className).toMatch(/w-56/);
+    expect(sidebar.className).toMatch(/w-64/);
     expect(screen.getByRole("heading", { name: "Clients" })).toBeTruthy();
     expect(localStorage.getItem("dashboard-sidebar-collapsed")).toBe("false");
+  });
+
+  it("does not display client record ids in sidebar rows", async () => {
+    render(
+      <DashboardSidebar
+        clients={clients}
+        selectedId="rec1"
+        onSelect={vi.fn()}
+        loadingList={false}
+        error={null}
+      />,
+    );
+    await screen.findByRole("complementary", { name: /clients sidebar/i });
+    const jane = screen.getByRole("button", { name: /Jane Doe/i });
+    expect(jane.textContent).not.toMatch(/rec1/i);
+    expect(screen.getByRole("button", { name: /John Smith/i }).textContent).not.toMatch(
+      /rec2/i,
+    );
+  });
+
+  it("marks selected client with aria-current", async () => {
+    render(
+      <DashboardSidebar
+        clients={clients}
+        selectedId="rec1"
+        onSelect={vi.fn()}
+        loadingList={false}
+        error={null}
+      />,
+    );
+    await screen.findByRole("complementary", { name: /clients sidebar/i });
+    const selected = screen.getByRole("button", { name: /Jane Doe/i });
+    expect(selected.getAttribute("aria-current")).toBe("true");
+    expect(selected.getAttribute("data-selected")).toBe("true");
+    expect(screen.getByRole("button", { name: /John Smith/i }).getAttribute("aria-current")).toBeNull();
   });
 
   it("shows client initials when collapsed", async () => {
@@ -184,7 +219,7 @@ describe("DashboardSidebar", () => {
     fireEvent.click(
       screen.getByRole("button", { name: /expand sidebar to search/i }),
     );
-    expect(sidebar.className).toMatch(/w-56/);
+    expect(sidebar.className).toMatch(/w-64/);
     expect(screen.getByRole("searchbox", { name: /search clients/i })).toBeTruthy();
   });
 });
@@ -196,25 +231,24 @@ describe("CopilotKit branding", () => {
     expect(screen.queryByText(/Powered by CopilotKit/i)).toBeNull();
   });
 
-  it("globals hide poweredByContainer inside copilotKitSidebar", () => {
-    const style = document.createElement("style");
-    style.textContent = `
-      .copilotKitSidebar .poweredByContainer {
-        display: none !important;
-        height: 0 !important;
-        visibility: hidden !important;
-      }
-    `;
-    document.head.appendChild(style);
+  it("globals keep chat input container visible (not .poweredByContainer)", () => {
     render(
       <div className="copilotKitSidebar">
-        <div className="poweredByContainer" data-testid="ck-brand">
-          Powered by CopilotKit
+        <div className="copilotKitInputContainer poweredByContainer">
+          <div className="copilotKitInput">
+            <textarea placeholder="Ask about sales…" aria-label="Chat message" />
+          </div>
+          <p className="poweredBy" style={{ display: "block" }}>
+            Powered by CopilotKit
+          </p>
         </div>
       </div>,
     );
-    const el = screen.getByTestId("ck-brand");
-    expect(getComputedStyle(el).display).toBe("none");
-    document.head.removeChild(style);
+    const container = screen
+      .getByPlaceholderText("Ask about sales…")
+      .closest(".copilotKitInputContainer");
+    expect(container).toBeTruthy();
+    expect(getComputedStyle(container!).display).not.toBe("none");
+    expect(screen.getByRole("textbox", { name: /chat message/i })).toBeTruthy();
   });
 });
