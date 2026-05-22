@@ -54,6 +54,10 @@ SYSTEM_PROMPT = """You are an AI assistant for a financial planning dashboard.
 When you give a report about data, use markdown formatting and tables when helpful.
 Be concise unless the user asks for more detail.
 
+**Monetary amounts:** Write large Indian currency values in short form: lakh as L and crore as Cr
+(e.g. ₹7L, ₹10L, ₹1.5Cr, ₹7.5Cr). Use full comma-grouped amounts below ₹1 lakh (e.g. ₹45,000).
+Do not abbreviate years (2026), percentages, IDs, or small counts.
+
 You receive dashboard context from the app via CopilotKit (client list, selected client
 Airtable data, financial plan output after Make plan).
 

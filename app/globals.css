@@ -256,6 +256,24 @@
   margin-top: 15px;
 }
 
+/* Chat markdown tables (CustomAssistantMessage → ChatMarkdown) */
+.chat-markdown .copilotKitMarkdown table,
+.chat-markdown-table {
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-markdown-table-wrap {
+  -webkit-overflow-scrolling: touch;
+}
+
+.chat-markdown .copilotKitMarkdownElement.copilotKitParagraph {
+  margin-bottom: 0.5rem;
+}
+
+.chat-markdown .copilotKitMarkdownElement.copilotKitParagraph:last-child {
+  margin-bottom: 0;
+}
+
 /* Hide branding only — do not target .poweredByContainer (CopilotKit puts that class on the input wrapper). */
 .copilotKitSidebar .poweredBy,
 .copilotKitPopup .poweredBy {

@@ -1,7 +1,9 @@
 /** Shared chart styling helpers (Zod schemas live on BarChart/PieChart components). */
 
+import { formatIndianCurrency } from "./formatIndianNumber";
+
 export function formatChartValue(value: number): string {
-  return `₹${value.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+  return formatIndianCurrency(value);
 }
 
 export function getChartPalette(isDark: boolean): string[] {
