@@ -7,6 +7,7 @@ import { Footer } from "../components/Footer";
 import { CustomAssistantMessage } from "../components/AssistantMessage";
 import { prompt } from "../lib/prompt";
 import { useCopilotReadable } from "@copilotkit/react-core";
+import { PolicyDocumentHitl } from "../components/PolicyDocumentHitl";
 
 import { Suspense } from "react";
 
@@ -18,6 +19,7 @@ function HomeContent() {
 
   return (
     <>
+      <PolicyDocumentHitl />
       <CopilotSidebar
         defaultOpen
         instructions={prompt}
@@ -29,7 +31,7 @@ function HomeContent() {
           placeholder: "Ask about sales, trends, or metrics...",
         }}
       >
-        <div className="min-h-screen bg-gray-50 flex flex-col">
+        <div className="flex min-h-screen flex-col bg-gray-50 dark:bg-gray-950">
           <Header />
           <main className="w-full max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 flex-grow">
             <ClientsDashboard />

@@ -176,3 +176,15 @@
   margin-bottom: 30px;
   margin-top: 15px;
 }
+
+/* Hide CopilotKit "Powered by" watermark (no supported disable prop in v1 sidebar) */
+.copilotKitSidebar .poweredByContainer,
+.copilotKitPopup .poweredByContainer {
+  display: none !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+  visibility: hidden !important;
+}

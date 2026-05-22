@@ -1,0 +1,150 @@
+# Cursor Rules — Financial Planning Copilot
+
+Project: Next.js + CopilotKit (v2 / AG-UI) frontend, Python LangGraph agent backend,
+Azure OpenAI for LLM, Tavily for web search, Airtable for client financial data.
+A conversational supervisor agent plus a deterministic financial planning workflow.
+
+These rules apply to EVERY change. Do not skip them, do not ask permission to skip them.
+
+---
+
+## 1. TESTING IS MANDATORY AFTER EVERY CHANGE
+
+No feature, fix, or change is "done" until tests exist for it and they pass.
+"It compiles" / "the code looks correct" is NOT proof of completion.
+
+For every change you must:
+
+1. Write automated tests appropriate to the layer:
+   - Python agent / tools / graph nodes → pytest under `agent/tests/`
+   - LangGraph graphs → run the compiled graph with a known input state, assert on the
+     output state AND the node execution path (which nodes ran, in what order)
+   - FastAPI / Next.js API routes → test request → response, including error responses
+   - Frontend components → React Testing Library; at minimum test render + key interaction
+   - Agent tools → unit-test the tool function directly with external services MOCKED
+
+2. Run the tests and paste the actual output. If anything fails, fix and re-run until green.
+   Never hand over failing or skipped tests as "done."
+
+3. Cover real cases, not just the happy path:
+   - The normal success case
+   - At least one failure/error case (bad input, missing data, external service down)
+   - Relevant edge cases (empty state, missing client, oversized file, etc.)
+   - For ANY money math: test with known, independently-verified inputs and assert the
+     EXACT expected numbers — not whatever the code currently outputs
+
+4. Add an integration/smoke test where it makes sense (e.g. a new agent tool run
+   end-to-end against a stubbed backend, asserting the resulting state).
+
+### Test infrastructure
+- All external services (Azure OpenAI, Tavily, Airtable) MUST be mocked. Tests run
+  offline, fast, and free — never hit real APIs or spend money.
+- Python: use `pytest` + `pytest-asyncio` for async nodes. Tests live in `agent/tests/`
+  mirroring the source layout.
+- Frontend: use the project's existing test runner. If none exists, set one up.
+- Maintain a single command to run all tests and state it in your report.
+
+### Do NOT
+- Mark work complete without running tests.
+- Write tests that always pass regardless of behavior (no `assert True`, no mocking the
+  exact thing under test).
+- Delete or weaken existing tests to make a change pass. If a change breaks a test,
+  either the change is wrong or the test needs a justified update — tell me which.
+
+### If something is genuinely untestable
+(pure config, a styling-only tweak) say so explicitly and explain why. Do not silently
+skip testing and do not pass off a trivial assertion as a real test.
+
+---
+
+## 2. FINISH EVERY TASK WITH A REPORT
+
+End each task with a short structured report:
+
+- **Changed:** files touched and what each change does
+- **Tests:** test files added + what each asserts
+- **Run:** the exact command to run them
+- **Result:** the actual pass/fail output
+- **Not covered:** anything you could not test and why (so I know the gaps)
+- **Follow-ups:** anything broken, half-done, or worth cleaning up that you noticed
+
+---
+
+## 3. HONESTY OVER OPTIMISM
+
+- The code is the source of truth. Never describe how something "should" work — verify
+  against the actual code.
+- If you find something broken, contradictory, or half-implemented, surface it. Do not
+  silently fix unrelated things and do not pretend something works when it doesn't.
+- If you are unsure how an existing part works, read it before changing it. Do not guess.
+- If a request is ambiguous, ask one focused question rather than building the wrong thing.
+- Do not invent features, formulas, API parameters, or capabilities not present in the
+  code. If a financial formula isn't implemented, leave a clear `TODO` and say so.
+
+---
+
+## 4. ADDITIVE BY DEFAULT — DON'T BREAK WORKING THINGS
+
+- Prefer additive changes. Don't refactor unrelated code in the same pass.
+- Never change the supervisor agent's id, port, or AG-UI wiring without being asked.
+  The frontend agent id stays `dashboard_agent` unless explicitly told otherwise.
+- Don't touch the frontend when the task is backend-only, and vice versa, unless required.
+- After changes, confirm existing flows still work: chat, `searchInternet`, the planning
+  workflow, and any human-in-the-loop flows.
+
+---
+
+## 5. CONSISTENCY RULES SPECIFIC TO THIS STACK
+
+- **Tool name matching is critical.** A tool's name must be IDENTICAL across: the Python
+  `@tool(...)` definition, the graph node, and the frontend hook
+  (`useHumanInTheLoop` / `useRenderTool` / `useFrontendTool` / `useCopilotAction`).
+  A mismatch causes a silent no-render or no-call. Always double-check this.
+- **CopilotKit v2 only where the project uses v2.** Do not mix v1 and v2 APIs in the same
+  component. Match the import paths the project already uses.
+- **Two Azure env naming schemes exist** — `AZURE_OPENAI_*` (Python agent) and
+  `AZURE_API_*` (Next.js direct mode). Use the right set for the right stack; don't merge.
+- **Determinism for money math.** Financial calculations must be deterministic and live in
+  graph nodes / pure functions — never left to LLM judgment. The LLM may choose WHICH
+  pipeline/tool to invoke, never the individual steps or the arithmetic.
+- **Agent honesty about data.** For any number about a specific client, the agent must read
+  it from stored/loaded state — never estimate or fabricate. For uploaded documents
+  (policies, ULIPs), answer strictly from the parsed document; if it's not in the doc,
+  say so.
+- **Keep tool results small.** Tools return concise summaries to the LLM, not giant JSON
+  state dumps — respect the context window. Full state lives on disk.
+
+---
+
+## 6. ERROR HANDLING & STATE
+
+- Graph nodes that can fail should be wrapped so a mid-pipeline failure saves partial
+  state, sets a clear error status, and exits gracefully rather than crashing the run.
+- Persist plan/agent state per client so it survives restarts and follow-up questions
+  don't trigger needless recomputation.
+- Validate inputs at boundaries (API request bodies, tool args, uploaded file size/type).
+
+---
+
+## 7. CODE QUALITY
+
+- Python: type hints everywhere; Pydantic v2 syntax (`model_dump`, `model_validate`).
+- Add a one-line log at the start of each graph node stating which node ran (debugging the
+  pipeline is impossible otherwise).
+- TypeScript: keep types explicit on component props and tool parameter schemas (zod).
+- No dead code, no leftover console spam, no committed secrets. Mask keys in any logging.
+- Keep diffs focused and readable.
+
+---
+
+## 8. SECURITY
+
+- Never log or echo secrets/keys. Read them from env; mask them if printed.
+- Validate and bound user-supplied input (especially uploaded files — enforce type and a
+  size limit before base64-encoding into a chat payload).
+- Don't expose internal services or stack traces to the client in production paths.
+
+---
+
+When in doubt: read the code first, make the smallest correct change, write tests, run
+them, and report honestly.

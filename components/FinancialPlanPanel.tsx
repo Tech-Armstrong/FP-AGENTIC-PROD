@@ -180,7 +180,7 @@ function ReviewSectionTitle({
   icon: Icon,
   children,
 }: {
-  icon: React.ComponentType<{ className?: string }>;
+  icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
   children: React.ReactNode;
 }) {
   return (

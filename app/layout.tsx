@@ -20,9 +20,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Chat with your data - CopilotKit",
+  title: "Armstrong Capital — Client Dashboard",
   description:
-    "AI-powered dashboard assistant for data visualization and insights",
+    "Financial planning dashboard with AI-assisted client insights",
 };
 
 export default function RootLayout({

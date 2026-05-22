@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { useCopilotAction, useCopilotReadable } from "@copilotkit/react-core";
 import { SearchResults } from "./generative-ui/SearchResults";
 import { FinancialPlanPanel } from "./FinancialPlanPanel";
+import { DashboardSidebar } from "./DashboardSidebar";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -436,20 +437,6 @@ function RsuSection({
   );
 }
 
-// ── Client sidebar row ────────────────────────────────────────────────────────
-function ClientRow({ client, selected, onClick }: { client: ClientListItem; selected: boolean; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`w-full text-left px-4 py-3 rounded-lg border transition-colors text-sm font-medium ${
-        selected ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-100 bg-white text-gray-700 hover:bg-gray-50"
-      }`}
-    >
-      {client.name}
-    </button>
-  );
-}
-
 // ── Main Dashboard ────────────────────────────────────────────────────────────
 export function ClientsDashboard() {
   const [clients, setClients]         = useState<ClientListItem[]>([]);
@@ -588,25 +575,17 @@ export function ClientsDashboard() {
   const IDLE_TAB   = `${TAB} border-transparent text-gray-500 hover:text-blue-700`;
 
   return (
-    <div className="flex gap-4 w-full">
-
-      {/* ── Sidebar ── */}
-      <div className="w-56 shrink-0 flex flex-col gap-2">
-        <p className="text-xs font-bold text-gray-400 uppercase tracking-wider px-1">Clients</p>
-        {loadingList && <div className="flex justify-center py-8"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500" /></div>}
-        {error && (
-          <div className="text-xs text-red-500 px-2 py-2 bg-red-50 rounded-lg border border-red-100">
-            {error}<br /><span className="text-gray-400">Is the FastAPI server running on port 8000?</span>
-          </div>
-        )}
-        {!loadingList && !error && clients.length === 0 && <p className="text-xs text-gray-400 px-2">No clients found.</p>}
-        {clients.map(c => (
-          <ClientRow key={c.record_id} client={c} selected={selectedId === c.record_id} onClick={() => setSelectedId(c.record_id)} />
-        ))}
-      </div>
+    <div className="relative flex w-full gap-4">
+      <DashboardSidebar
+        clients={clients}
+        selectedId={selectedId}
+        onSelect={setSelectedId}
+        loadingList={loadingList}
+        error={error}
+      />
 
       {/* ── Main area ── */}
-      <div className="flex-1 min-w-0">
+      <div className="min-w-0 flex-1">
         {!selectedId && (
           <div className="flex items-center justify-center h-64 rounded-xl border-2 border-dashed border-gray-200 text-gray-400 text-sm">
             Select a client to view their financial summary

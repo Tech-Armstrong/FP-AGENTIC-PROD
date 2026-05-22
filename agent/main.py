@@ -29,7 +29,11 @@ from langchain.tools import tool
 from langchain_core.messages import HumanMessage
 from langchain_openai import AzureChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
+from pydantic import BaseModel, Field
 from tavily import TavilyClient
+
+from policy_document_tool import finalize_client_upload, request_policy_document
+from policy_documents import extract_text_from_upload
 
 # Unbuffered stdout/stderr (python -u equivalent)
 os.environ.setdefault("PYTHONUNBUFFERED", "1")
@@ -45,13 +49,39 @@ logging.basicConfig(
 )
 log = logging.getLogger("agent")
 
-SYSTEM_PROMPT = """You are an AI assistant built for helping users understand their data.
+SYSTEM_PROMPT = """You are an AI assistant for a financial planning dashboard.
 
 When you give a report about data, use markdown formatting and tables when helpful.
 Be concise unless the user asks for more detail.
 
-You receive dashboard context from the app via CopilotKit. Use searchInternet when
-the user needs information beyond the dashboard data."""
+You receive dashboard context from the app via CopilotKit (client list, selected client
+Airtable data, financial plan output after Make plan).
+
+## Insurance policies and ULIPs
+
+When the user asks about THEIR insurance policy, life insurance, term plan, ULIP,
+unit-linked plan, policy document, coverage, premiums, charges, surrender value, fund
+allocation, or wants a policy/ULIP reviewed:
+
+1. If no policy document has been uploaded in this thread yet, you MUST call
+   `request_policy_document` with the correct document_type and a short reason.
+   Do NOT guess policy terms, coverage amounts, charges, or fund values.
+
+2. After `request_policy_document` returns with extracted_text (or already_uploaded),
+   answer ONLY using that text for policy-specific facts. If the answer is not in the
+   document, say clearly that it is not stated in the uploaded document.
+
+3. If the user skipped upload, give general educational information and state you do
+   not have their actual policy document.
+
+4. Do NOT call `request_policy_document` again if a document is already on file for
+   this thread.
+
+For unrelated questions (markets, NIFTY, general finance, dashboard metrics without
+policy/ULIP intent), answer normally and do not request uploads.
+
+Use searchInternet when the user needs information beyond dashboard data and uploaded
+policy documents."""
 
 
 def _env(*keys: str, default: str | None = None) -> str | None:
@@ -195,19 +225,20 @@ def _log_run_agent_input(input_data: RunAgentInput) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await run_startup_self_test()
-    bound_tools = [search_internet.name]
+    bound_tools = [search_internet.name, request_policy_document.name]
     log.info("Bound tools: %s", bound_tools)
-    if "searchInternet" not in bound_tools:
-        raise SystemExit(
-            f"Expected tool name 'searchInternet', got {bound_tools!r}"
-        )
+    for required in ("searchInternet", "request_policy_document"):
+        if required not in bound_tools:
+            raise SystemExit(
+                f"Expected tool name {required!r}, got {bound_tools!r}"
+            )
     yield
 
 
 def build_graph():
     return create_agent(
         create_model(),
-        tools=[search_internet],
+        tools=[search_internet, request_policy_document],
         middleware=[CopilotKitMiddleware()],
         system_prompt=SYSTEM_PROMPT,
         checkpointer=MemorySaver(),
@@ -270,6 +301,48 @@ def copilotkit_health():
 @app.get("/health")
 def health():
     return {"status": "ok", "agent": "dashboard_agent"}
+
+
+class ParsePolicyDocumentBody(BaseModel):
+    filename: str | None = None
+    fileType: str | None = None
+    fileData: str = Field(..., description="Base64-encoded file bytes")
+    thread_id: str | None = None
+    document_type: str = "insurance_policy"
+
+
+@app.post("/parse-policy-document")
+def parse_policy_document_endpoint(body: ParsePolicyDocumentBody):
+    """Extract text from an uploaded policy PDF (used by chat upload UI)."""
+    try:
+        text = extract_text_from_upload(
+            file_data=body.fileData,
+            file_type=body.fileType,
+            filename=body.filename,
+        )
+        tid = (body.thread_id or "default").strip() or "default"
+        doc_type = body.document_type or "insurance_policy"
+        tool_result = finalize_client_upload(
+            {
+                "uploaded": True,
+                "filename": body.filename,
+                "fileType": body.fileType,
+                "fileData": body.fileData,
+                "extractedText": text,
+            },
+            thread_id=tid,
+            document_type=doc_type,
+        )
+        return {
+            "extracted_text": text,
+            "char_count": len(text),
+            "thread_id": tid,
+            "tool_result": json.loads(tool_result),
+        }
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"detail": str(exc)})
+    except RuntimeError as exc:
+        return JSONResponse(status_code=503, content={"detail": str(exc)})
 
 
 if __name__ == "__main__":
