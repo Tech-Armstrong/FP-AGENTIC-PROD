@@ -10,6 +10,7 @@ import {
   Target,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SsyTrackerSection, type SsySummaryEntry } from "./SsyTrackerSection";
 
 type SchemeBreakdownRow = {
   type?: string;
@@ -54,6 +55,7 @@ type PlanSummary = {
   loans_exist?: boolean;
   final_unused_monthly_surplus?: number | null;
   retirement_goal_preview?: unknown;
+  ssy_summary_preview?: SsySummaryEntry[];
 };
 
 type PlanResponse = { ok?: boolean; summary?: PlanSummary; detail?: string };
@@ -802,6 +804,10 @@ export function FinancialPlanPanel({
                     })}
                   </div>
                 </div>
+              ) : null}
+
+              {s.ssy_summary_preview && s.ssy_summary_preview.length > 0 ? (
+                <SsyTrackerSection rows={s.ssy_summary_preview} />
               ) : null}
 
               {/* Prioritized goals table */}

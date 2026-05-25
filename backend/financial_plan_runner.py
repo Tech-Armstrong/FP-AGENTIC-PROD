@@ -28,6 +28,60 @@ def ensure_fp_runtime() -> None:
         sys.path.insert(0, root)
 
 
+def build_ssy_summary_preview(oga: dict) -> list[dict]:
+    """
+    Build SSY Tracker rows for the plan review UI (matches Armstrong index.html ssy_summary).
+    """
+    if not isinstance(oga, dict):
+        return []
+
+    tracker = oga.get("ssy_tracker")
+    if not isinstance(tracker, dict):
+        tracker = {}
+
+    total_fv_by_child: dict[str, float] = {}
+    for g in oga.get("goals") or []:
+        if not isinstance(g, dict):
+            continue
+        for f in g.get("funded_from") or []:
+            if not isinstance(f, dict) or f.get("type") != "ssy_funds":
+                continue
+            source = str(f.get("source") or "")
+            child = source.replace("SSY account of ", "").strip()
+            if not child:
+                continue
+            tfv = f.get("total_ssy_fv")
+            if tfv is not None:
+                try:
+                    total_fv_by_child[child] = max(
+                        total_fv_by_child.get(child, 0.0), float(tfv)
+                    )
+                except (TypeError, ValueError):
+                    pass
+
+    rows: list[dict] = []
+    for child_name, data in tracker.items():
+        if not isinstance(data, dict):
+            continue
+        remaining = float(data.get("remaining_balance") or 0)
+        maturity_year = data.get("maturity_year")
+        total_fv = data.get("total_fv") or total_fv_by_child.get(child_name)
+        locked = data.get("locked")
+        if locked is None:
+            locked = remaining > 0
+        rows.append(
+            {
+                "child_name": child_name,
+                "total_fv": total_fv,
+                "total_withdrawn": data.get("total_withdrawn", 0),
+                "remaining_balance": remaining,
+                "maturity_year": maturity_year,
+                "locked": bool(locked),
+            }
+        )
+    return rows
+
+
 def summarize_plan_state(state: dict) -> dict:
     """Compact view for API / UI (full state can be very large)."""
     cd = state.get("client_data") or {}
@@ -254,6 +308,11 @@ def summarize_plan_state(state: dict) -> dict:
                 return val[-1]
         return val
 
+    oga_for_ssy = state.get("optimal_goal_allocation") or {}
+    ssy_summary_preview = build_ssy_summary_preview(
+        oga_for_ssy if isinstance(oga_for_ssy, dict) else {}
+    )
+
     return {
         "client_name": name,
         "monthly_surplus": state.get("monthly_surplus"),
@@ -272,6 +331,7 @@ def summarize_plan_state(state: dict) -> dict:
         "retirement_goal_preview": (state.get("retirement_goal") or [])[:2]
         if isinstance(state.get("retirement_goal"), list)
         else state.get("retirement_goal"),
+        "ssy_summary_preview": ssy_summary_preview,
     }
 
 

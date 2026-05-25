@@ -11,6 +11,18 @@ AI-powered financial planning dashboard with a Copilot sidebar: browse client re
 
 ## How to run locally
 
+**One command (Windows):** from the repo root, after copying `.env`:
+
+```powershell
+npm run dev:all
+```
+
+Or: `.\scripts\start-dev.ps1` (add `-SkipInstall` to skip `pip`/`npm` on restarts). On macOS/Linux: `chmod +x scripts/start-dev.sh && ./scripts/start-dev.sh`.
+
+This creates `.venv`, installs Python and npm deps if needed, and starts the agent (:8000), Airtable API (:8001), and Next.js (:3000). Press Enter in the launcher window (Windows) or Ctrl+C (bash) to stop.
+
+**Manual (three terminals):**
+
 1. Copy env and configure keys (see `.env.example` — Azure for the agent, Tavily, Airtable for the dashboard):
 
    ```bash

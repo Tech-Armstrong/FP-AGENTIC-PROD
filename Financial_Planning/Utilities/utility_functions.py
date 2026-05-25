@@ -749,8 +749,91 @@ def calculate_current_value(scheme):
     return round(current_value, 2)
 
 
+def stepup_sip_horizon_months(
+    target_year: int,
+    current_year: int,
+    *,
+    sip_starts_next_year: bool,
+) -> int:
+    """
+    Months for step-up SIP from SIP start through target_year.
+
+    When allocation already tried this year (sip_starts_next_year), SIP is assumed
+    to begin next calendar year — not ``full_horizon - 12`` (that yields 0 for a
+    goal one year away).
+    """
+    if target_year <= current_year:
+        return 0
+    if sip_starts_next_year:
+        months = (target_year - current_year - 1) * 12
+    else:
+        months = (target_year - current_year) * 12
+    if months < 12:
+        return 12
+    return months
+
+
+def recommend_stepup_sip_for_gap(
+    corpus_gap: float,
+    target_year: int,
+    current_year: int,
+    funded_from: list | None = None,
+    *,
+    annual_return_rate: float = 0.08,
+    step_up_rate: float = 0.07,
+) -> tuple[float, str]:
+    """
+    Step-up SIP for a remaining corpus gap. Returns (monthly_sip, sip_start_message).
+    """
+    funded_from = funded_from or []
+    sip_starts_next_year = len(funded_from) > 0
+    months = stepup_sip_horizon_months(
+        target_year,
+        current_year,
+        sip_starts_next_year=sip_starts_next_year,
+    )
+    years_to_goal = target_year - current_year
+    monthly_rate = annual_return_rate / 12.0
+
+    raw_sip = stepup_sip_required(
+        corpus_gap,
+        annual_return_rate,
+        months,
+        step_up_rate,
+        round_result=False,
+    )
+
+    print(
+        "DEBUG SIP inputs:",
+        {
+            "corpus_gap": corpus_gap,
+            "annual_return_rate": annual_return_rate,
+            "step_up_rate": step_up_rate,
+            "years_to_goal": years_to_goal,
+            "months_to_goal": months,
+            "monthly_rate": monthly_rate,
+            "monthly_stepup": step_up_rate,
+            "sip_starts_next_year": sip_starts_next_year,
+        },
+    )
+    print("DEBUG raw SIP result:", raw_sip)
+
+    if raw_sip == float("inf") or raw_sip != raw_sip:
+        sip = 0
+    else:
+        sip = round(raw_sip)
+        if sip <= 0 and corpus_gap > 0 and months > 0:
+            sip = max(1, round(raw_sip))
+
+    sip_start_msg = (
+        "from next year onwards" if sip_starts_next_year else "from this year onwards"
+    )
+    return sip, sip_start_msg
+
+
 def stepup_sip_required(corpus_needed: float, r_annual: float, n_months: int, 
-                        stepup_rate: float, stepup_frequency: int = 12) -> float:
+                        stepup_rate: float, stepup_frequency: int = 12,
+                        *, round_result: bool = True) -> float:
     """
     Monthly Step-up SIP needed to reach corpus_needed with periodic increases.
     
@@ -765,7 +848,12 @@ def stepup_sip_required(corpus_needed: float, r_annual: float, n_months: int,
         Initial monthly SIP amount needed
     """
     if n_months <= 0:
-        return 0  # Changed from float('inf') to 0 for better handling
+        if corpus_needed > 0:
+            print(
+                "DEBUG SIP warning: n_months <= 0 with positive corpus_needed; returning 0",
+                {"corpus_needed": corpus_needed, "n_months": n_months},
+            )
+        return 0
     if corpus_needed <= 0:
         return 0  # No SIP needed if corpus is already met
     if r_annual < 0:
@@ -811,7 +899,7 @@ def stepup_sip_required(corpus_needed: float, r_annual: float, n_months: int,
     
     # Calculate initial SIP needed
     initial_sip = corpus_needed / fv_total
-    return round(initial_sip)
+    return round(initial_sip) if round_result else initial_sip
 
 
 def calculate_ssy_future_value(

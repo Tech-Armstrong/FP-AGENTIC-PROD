@@ -15,7 +15,7 @@ What this file contains and processes:
 from Financial_Planning.Models.client_data_state import ClientState
 from datetime import datetime, date
 from Financial_Planning.Utilities.utility_functions import (apply_lumpsum_to_goal, apply_freed_sip_to_goal, apply_surplus_sip_to_goal, remaining_tenure, _add_months, calculate_future_value,
-                                                         max_extra_payment, total_interest, _freed_by_year, _safe, sip_required,stepup_sip_required,calculate_ssy_future_value)
+                                                         max_extra_payment, total_interest, _freed_by_year, _safe, sip_required, stepup_sip_required, recommend_stepup_sip_for_gap, calculate_ssy_future_value)
 import copy
 import pickle 
 import os
@@ -229,11 +229,14 @@ def plan_goals(state: ClientState):
                         })
                         
                         # Update SSY tracker for this child
+                        prev_tracker = ssy_tracker.get(child_name, {})
                         ssy_tracker[child_name] = {
                             'remaining_balance': actual_remaining,
                             'last_withdrawal_year': end_year,
-                            'total_withdrawn': ssy_tracker.get(child_name, {}).get('total_withdrawn', 0) + amount_to_use,
-                            'maturity_year': maturity_year
+                            'total_withdrawn': prev_tracker.get('total_withdrawn', 0) + amount_to_use,
+                            'maturity_year': maturity_year,
+                            'total_fv': prev_tracker.get('total_fv') or round(total_fv_at_goal),
+                            'locked': actual_remaining > 0 and end_year < maturity_year,
                         }
                         
                         ssy_details_utilised = {
@@ -587,16 +590,9 @@ def plan_goals(state: ClientState):
                         break
                     else :  
                         goal['corpus_gap'] = gap
-                        if not funded_from or len(funded_from) == 0:
-                           # No allocation made - calculate SIP from current year for full tenure
-                           remaining_months = int((goal['target_year'] - current_year) * 12)
-                           sip = stepup_sip_required(gap, 0.08, remaining_months, 0.07)
-                           sip_start_msg = "from this year onwards"
-                        else:
-                           # Some allocation made - calculate SIP from next year on remaining tenure
-                           remaining_months = int((goal['target_year'] - current_year) * 12) - 12
-                           sip = stepup_sip_required(gap, 0.08, remaining_months, 0.07)
-                           sip_start_msg = "from next year onwards"  
+                        sip, sip_start_msg = recommend_stepup_sip_for_gap(
+                            gap, goal['target_year'], current_year, funded_from
+                        )
                         if goal['depriorized']: 
                              goal['note']=[f"DEPRIORITISED International education Corpus gap: {gap}, {round((1-abs(gap)/goal['target_corpus']),1)*100}% still remains for {goal['goal_name'].split(" ")[0]}'s {goal['goal_name'].split(" ")[-1]} goal. You will have to start SIP of {sip} monthly {sip_start_msg} to achieve this goal."]      
                         #sip=stepup_sip_required(gap, 0.08,int((goal['target_year']- current_year)*12),0.07)
@@ -627,16 +623,9 @@ def plan_goals(state: ClientState):
                         break 
                 elif postpone==2:    
                         goal['corpus_gap'] = gap
-                        if not funded_from or len(funded_from) == 0:
-                           # No allocation made - calculate SIP from current year for full tenure
-                           remaining_months = int((goal['target_year'] - current_year) * 12)
-                           sip = stepup_sip_required(gap, 0.08, remaining_months, 0.07)
-                           sip_start_msg = "from this year onwards"
-                        else:
-                           # Some allocation made - calculate SIP from next year on remaining tenure
-                           remaining_months = int((goal['target_year'] - current_year) * 12) - 12
-                           sip = stepup_sip_required(gap, 0.08, remaining_months, 0.07)
-                           sip_start_msg = "from next year onwards"
+                        sip, sip_start_msg = recommend_stepup_sip_for_gap(
+                            gap, goal['target_year'], current_year, funded_from
+                        )
                         
                         goal['note'] = [f"Corpus gap: {gap}, {round((gap/goal['corpus_needed'])*100, 2)}% still remains for {goal['goal_name'].split(' ')[0]}'s {goal['goal_name'].split(' ')[-1]} goal. You will have to start SIP of {sip} at 8%, with a annual step up of 7% {sip_start_msg}  inorder to achieve goal."]
                         goal['filter']=[{'type': 'postponed'}]
@@ -673,16 +662,9 @@ def plan_goals(state: ClientState):
             # Keep what we could do in the last attempt (no state change), just record failure note
             goal['corpus_gap'] = gap  
             # Check if any funds have been allocated
-            if not funded_from or len(funded_from) == 0:
-                   # No allocation made - calculate SIP from current year for full tenure
-                   remaining_months = int((goal['target_year'] - current_year) * 12)
-                   sip = stepup_sip_required(gap, 0.08, remaining_months, 0.07)
-                   sip_start_msg = "from this year onwards"
-            else:
-                   # Some allocation made - calculate SIP from next year on remaining tenure
-                   remaining_months = int((goal['target_year'] - current_year) * 12) - 12
-                   sip = stepup_sip_required(gap, 0.08, remaining_months, 0.07)
-                   sip_start_msg = "from next year onwards"
+            sip, sip_start_msg = recommend_stepup_sip_for_gap(
+                gap, goal['target_year'], current_year, funded_from
+            )
             goal['note'] = [f" type: unfunded , Corpus gap: {gap}, {round((gap/goal['corpus_needed'])*100, 2)}% for {goal['goal_name']} goal could not be funded due to insufficient funds. You will have to start SIP of {sip} at 8%, with a annual step up of 7% {sip_start_msg}  inorder to achieve goal"]
             goal['filter']=[{'type': 'unfunded'}]
             monthly_surplus = local_surplus 
@@ -746,8 +728,12 @@ def plan_goals(state: ClientState):
                 goal['note'] = [f"{pct_achieved}% of {child_name}'s {goal_type} goal is achieved (includes ESOP funding)"]
                 goal['filter'] = [{'type': 'funded'}]
             else:
-                remaining_months = int((goal['target_year'] - current_year) * 12)
-                sip = stepup_sip_required(goal['corpus_gap'], 0.08, remaining_months, 0.07)
+                sip, _sip_start_msg = recommend_stepup_sip_for_gap(
+                    goal['corpus_gap'],
+                    goal['target_year'],
+                    current_year,
+                    goal.get('funded_from'),
+                )
                 child_name = goal['goal_name'].split(" ")[0]
                 goal_type = goal['goal_name'].split(" ")[-1]
                 goal['note'] = [f"Corpus gap after ESOP: {goal['corpus_gap']}, {round((goal['corpus_gap']/goal['corpus_needed'])*100, 2)}% still remains for {child_name}'s {goal_type} goal. SIP of {sip} at 8% with 7% annual step-up needed."]
@@ -884,8 +870,12 @@ def plan_goals(state: ClientState):
                         goal['note']   = [f"{pct_achieved}% of {child_name}'s {goal_type} goal achieved (includes RSU funding)"]
                         goal['filter'] = [{'type': 'funded'}]
                     else:
-                        remaining_months = int((goal_year - current_year) * 12)
-                        sip = stepup_sip_required(goal['corpus_gap'], 0.08, remaining_months, 0.07)
+                        sip, _sip_start_msg = recommend_stepup_sip_for_gap(
+                            goal['corpus_gap'],
+                            goal_year,
+                            current_year,
+                            goal.get('funded_from'),
+                        )
                         child_name = goal['goal_name'].split(" ")[0]
                         goal_type  = goal['goal_name'].split(" ")[-1]
                         goal['note']   = [f"Corpus gap after RSU: {goal['corpus_gap']}, {round((goal['corpus_gap']/goal['corpus_needed'])*100, 2)}% still remains for {child_name}'s {goal_type} goal. SIP of {sip} at 8% with 7% step-up needed."]
@@ -923,7 +913,8 @@ def plan_goals(state: ClientState):
         "ending_monthly_surplus": monthly_surplus,
         "ending_liquid_pool": liquid_pool,
         "ending_freed_sip_schedule": freed_sip,
-        "rsu_portfolio": rsu_portfolio
+        "rsu_portfolio": rsu_portfolio,
+        "ssy_tracker": ssy_tracker,
     }
 
     if state['loans_exist'] == True:
