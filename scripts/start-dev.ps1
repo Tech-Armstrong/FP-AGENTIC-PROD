@@ -20,17 +20,25 @@ if (-not (Test-Path ".env")) {
 }
 
 $venvPython = Join-Path $RepoRoot ".venv\Scripts\python.exe"
-$venvPip = Join-Path $RepoRoot ".venv\Scripts\pip.exe"
 
-if (-not $SkipInstall) {
+function Ensure-Venv {
     if (-not (Test-Path $venvPython)) {
         Write-Step "Creating Python virtual environment (.venv)"
         python -m venv .venv
     }
+    $pipCheck = & $venvPython -m pip --version 2>$null
+    if (-not $pipCheck) {
+        Write-Step "Bootstrapping pip in .venv (incomplete venv detected)"
+        & $venvPython -m ensurepip --upgrade
+    }
+}
+
+if (-not $SkipInstall) {
+    Ensure-Venv
 
     Write-Step "Installing Python dependencies (backend + agent)"
-    & $venvPip install -r requirements.txt
-    & $venvPip install -r agent\requirements.txt
+    & $venvPython -m pip install -r requirements.txt
+    & $venvPython -m pip install -r agent\requirements.txt
 
     if (-not (Test-Path "node_modules")) {
         Write-Step "Installing npm dependencies"
