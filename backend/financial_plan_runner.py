@@ -82,6 +82,92 @@ def build_ssy_summary_preview(oga: dict) -> list[dict]:
     return rows
 
 
+def _build_spouse_preview(client_payload: dict) -> dict | None:
+    inner = client_payload.get("client_data") or {}
+    spouse = inner.get("spouse")
+    if isinstance(spouse, dict) and (spouse.get("spouse_name") or spouse.get("spouse_dob")):
+        return dict(spouse)
+
+    name = inner.get("spouse_name")
+    dob = inner.get("spouse_dob")
+    if not name and not dob:
+        return None
+    return {"spouse_name": name, "spouse_dob": dob}
+
+
+def _marriage_funding_status(goal: dict) -> str:
+    gap = goal.get("corpus_gap")
+    if gap is None:
+        gap = goal.get("corpus_needed")
+    try:
+        gap_f = float(gap) if gap is not None else None
+    except (TypeError, ValueError):
+        gap_f = None
+    funded_from = goal.get("funded_from") or []
+    if gap_f is not None and gap_f <= 0:
+        return "funded"
+    if funded_from:
+        return "partial"
+    return "not_funded"
+
+
+def _build_marriage_goals_preview(state: dict, client_payload: dict) -> list[dict]:
+    financial_goals = client_payload.get("financial_goals") or []
+    raw_lookup = {
+        g["goal_name"]: g.get("capital_required_today", 0)
+        for g in financial_goals
+        if isinstance(g, dict) and g.get("goal_name")
+    }
+
+    rows: list[dict] = []
+    oga = state.get("optimal_goal_allocation") or {}
+    for goal in oga.get("goals") or []:
+        if not isinstance(goal, dict):
+            continue
+        goal_name = str(goal.get("goal_name", "")).strip()
+        if not goal_name.endswith("Marriage"):
+            continue
+        child_name = goal_name.rsplit(" ", 1)[0]
+        rows.append(
+            {
+                "goal_name": goal_name,
+                "child_name": child_name,
+                "target_year": goal.get("target_year"),
+                "current_cost": raw_lookup.get(goal_name, 0),
+                "future_cost": goal.get("target_corpus") or goal.get("corpus_needed"),
+                "status": _marriage_funding_status(goal),
+            }
+        )
+
+    if rows:
+        return rows
+
+    for g in financial_goals:
+        if not isinstance(g, dict):
+            continue
+        goal_name = str(g.get("goal_name", ""))
+        if "marriage" not in goal_name.lower():
+            continue
+        child_name = goal_name.rsplit(" ", 1)[0] if goal_name.lower().endswith("marriage") else goal_name
+        rows.append(
+            {
+                "goal_name": goal_name,
+                "child_name": child_name,
+                "target_year": g.get("target_year"),
+                "current_cost": g.get("capital_required_today"),
+                "future_cost": None,
+                "status": "not_funded",
+            }
+        )
+    return rows
+
+
+def _build_real_estate_preview(client_payload: dict) -> list[dict]:
+    inv = client_payload.get("investment_details") or {}
+    items = inv.get("real_estate_investment") or []
+    return [dict(x) for x in items if isinstance(x, dict)]
+
+
 def summarize_plan_state(state: dict) -> dict:
     """Compact view for API / UI (full state can be very large)."""
     cd = state.get("client_data") or {}
@@ -313,6 +399,12 @@ def summarize_plan_state(state: dict) -> dict:
         oga_for_ssy if isinstance(oga_for_ssy, dict) else {}
     )
 
+    spouse_preview = _build_spouse_preview(cd if isinstance(cd, dict) else {})
+    marriage_goals_preview = _build_marriage_goals_preview(
+        state, cd if isinstance(cd, dict) else {}
+    )
+    real_estate_preview = _build_real_estate_preview(cd if isinstance(cd, dict) else {})
+
     return {
         "client_name": name,
         "monthly_surplus": state.get("monthly_surplus"),
@@ -332,6 +424,9 @@ def summarize_plan_state(state: dict) -> dict:
         if isinstance(state.get("retirement_goal"), list)
         else state.get("retirement_goal"),
         "ssy_summary_preview": ssy_summary_preview,
+        "spouse_preview": spouse_preview,
+        "marriage_goals_preview": marriage_goals_preview,
+        "real_estate_preview": real_estate_preview,
     }
 
 

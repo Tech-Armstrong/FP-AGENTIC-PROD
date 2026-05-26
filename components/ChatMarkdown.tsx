@@ -1,7 +1,6 @@
 "use client";
 
 import { Markdown } from "@copilotkit/react-ui";
-import type { Components } from "react-markdown";
 import { isValidElement, type ReactElement, type ReactNode } from "react";
 import {
   formatMonetaryCellText,
@@ -39,24 +38,24 @@ function cellClassName(children: ReactNode, extra = ""): string {
     .join(" ");
 }
 
-export const chatMarkdownComponents: Components = {
-  table: ({ children }) => (
+export const chatMarkdownComponents = {
+  table: ({ children }: { children?: ReactNode }) => (
     <div className="chat-markdown-table-wrap my-3 w-full max-w-full overflow-x-auto rounded-lg border border-[var(--border-subtle)]">
       <table className="chat-markdown-table w-full min-w-[280px] border-collapse text-[var(--text-body)]">
         {children}
       </table>
     </div>
   ),
-  thead: ({ children }) => (
+  thead: ({ children }: { children?: ReactNode }) => (
     <thead className="bg-[var(--brand-muted)] dark:bg-[var(--surface-raised)]">
       {children}
     </thead>
   ),
-  tbody: ({ children }) => <tbody>{children}</tbody>,
-  tr: ({ children }) => (
+  tbody: ({ children }: { children?: ReactNode }) => <tbody>{children}</tbody>,
+  tr: ({ children }: { children?: ReactNode }) => (
     <tr className="even:bg-[var(--canvas)]/50 dark:even:bg-gray-900/30">{children}</tr>
   ),
-  th: ({ children, ...props }) => (
+  th: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
     <th
       {...props}
       className={cellClassName(
@@ -67,7 +66,7 @@ export const chatMarkdownComponents: Components = {
       {formatCellChildren(children)}
     </th>
   ),
-  td: ({ children, ...props }) => (
+  td: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
     <td {...props} className={cellClassName(children)}>
       {formatCellChildren(children)}
     </td>
@@ -81,7 +80,7 @@ type ChatMarkdownProps = {
 export function ChatMarkdown({ content }: ChatMarkdownProps) {
   return (
     <div className="chat-markdown copilotKitMarkdown text-[var(--text-body)]">
-      <Markdown content={content} components={chatMarkdownComponents} />
+      <Markdown content={content} components={chatMarkdownComponents as never} />
     </div>
   );
 }

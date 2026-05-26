@@ -199,19 +199,11 @@ def airtable_record_to_client_data(fields: dict) -> dict:
     client_data_block["children"]    = children
     client_data_block["if_any_kids"] = bool(children) or _bool("is_kids")
 
-    # ── 3. Real estate ───────────────────────────────────────────────────────
-    real_estate = []
+    # ── 3. Real estate raw values (assembled after liabilities) ───────────────
     self_occ   = _f("self_occupied_property_value")
     rental_val = _f("rental_property_value")
     other_re   = _f("other_real_estate_investments_current_value")
     land       = _f("land_investments_current_value")
-    total_re   = self_occ + other_re + land
-    if total_re or rental_val:
-        real_estate.append({"current_market_value": total_re, "rental_income": 0})
-    if rental_val:
-        real_estate.append({"current_market_value": rental_val, "rental_income": 0})
-    if not real_estate:
-        real_estate = [{"current_market_value": 0, "rental_income": 0}]
 
     # ── 4. EPF / PPF / NPS ──────────────────────────────────────────────────
     epf_list = []
@@ -368,6 +360,44 @@ def airtable_record_to_client_data(fields: dict) -> dict:
     spouse_fd_rate    = _rate("spouse_investment_fd_bond_rate_intrest")
     spouse_fd_mat     = _s("spouse_investment_fd_bond_maturity_date")
 
+    if client_data_block.get("spouse_name") or client_data_block.get("spouse_dob"):
+        spouse_block: dict = {
+            "spouse_name": client_data_block["spouse_name"],
+            "spouse_dob": client_data_block["spouse_dob"],
+        }
+        if spouse_mf_val:
+            spouse_block["spouse_investment_mutual_fund_value"] = spouse_mf_val
+        if spouse_eq_val:
+            spouse_block["spouse_investment_direct_equity_value"] = spouse_eq_val
+
+        esop: dict = {}
+        if spouse_vested:
+            esop["vested"] = spouse_vested
+        if spouse_unvested:
+            esop["unvested"] = spouse_unvested
+        if esop:
+            spouse_block["esop"] = esop
+
+        pf: dict = {}
+        if spouse_pf_val:
+            pf["current_value"] = spouse_pf_val
+        if spouse_pf_contrib:
+            pf["monthly_contribution"] = spouse_pf_contrib
+        if pf:
+            spouse_block["provident_fund"] = pf
+
+        fd: dict = {}
+        if spouse_fd_amt:
+            fd["invested_amount"] = spouse_fd_amt
+        if spouse_fd_rate:
+            fd["interest_rate"] = spouse_fd_rate
+        if spouse_fd_mat:
+            fd["maturity_date"] = spouse_fd_mat
+        if fd:
+            spouse_block["fd_bond"] = fd
+
+        client_data_block["spouse"] = spouse_block
+
     # ── 11. Investment pools ─────────────────────────────────────────────────
     mf_val       = _f("mutual_fund_current_value") + spouse_mf_val
     sip_amt      = _f("current_sip_going_on")
@@ -467,6 +497,55 @@ def airtable_record_to_client_data(fields: dict) -> dict:
     li_coverage = _f("life_insurance_coverage_value")
     if li_name or li_coverage:
         life_insurance.append({"company_name": li_name, "coverage_value": li_coverage})
+
+    # ── Real estate portfolio (after liabilities for loan linkage) ───────────
+    home_loans = [l for l in liabilities if l.get("type") == "Home loan"]
+    home_loan_balance = sum(float(l.get("outstanding_balance") or 0) for l in home_loans)
+    home_loan_emi = sum(float(l.get("emi_amount") or 0) for l in home_loans)
+
+    real_estate = []
+    if self_occ:
+        real_estate.append({
+            "property_name": "Self-occupied property",
+            "property_type": "Residential",
+            "location": "—",
+            "current_value": self_occ,
+            "current_market_value": self_occ,
+            "is_self_occupied": True,
+            "loan_outstanding": home_loan_balance or None,
+            "monthly_emi": home_loan_emi or None,
+            "rental_income": 0,
+        })
+    if other_re:
+        real_estate.append({
+            "property_name": "Other real estate",
+            "property_type": "Residential",
+            "location": "—",
+            "current_value": other_re,
+            "current_market_value": other_re,
+            "is_self_occupied": False,
+            "rental_income": 0,
+        })
+    if land:
+        real_estate.append({
+            "property_name": "Land",
+            "property_type": "Residential",
+            "location": "—",
+            "current_value": land,
+            "current_market_value": land,
+            "is_self_occupied": False,
+            "rental_income": 0,
+        })
+    if rental_val:
+        real_estate.append({
+            "property_name": "Rental property",
+            "property_type": "Residential",
+            "location": "—",
+            "current_value": rental_val,
+            "current_market_value": rental_val,
+            "is_self_occupied": False,
+            "rental_income": 0,
+        })
 
     # ── Assemble ─────────────────────────────────────────────────────────────
     investment_details = {

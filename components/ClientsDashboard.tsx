@@ -7,6 +7,9 @@ import { SearchResults } from "./generative-ui/SearchResults";
 import { CurrentDateTool } from "./generative-ui/CurrentDateTool";
 import { FinancialPlanPanel } from "./FinancialPlanPanel";
 import { DashboardSidebar } from "./DashboardSidebar";
+import { SpouseDetailsPanel, mergeSpouseData, type SpouseData } from "./SpouseDetailsPanel";
+import { RealEstateTable, type RealEstateProperty } from "./RealEstateTable";
+import { MarriageGoalsSection, type MarriageGoalRow } from "./MarriageGoalsSection";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -34,11 +37,12 @@ interface ClientDetail {
       name: string; pan: string; organization_name: string;
       date_of_birth: string; retirement_age: number;
       spouse_name: string; spouse_dob: string;
+      spouse?: SpouseData;
       if_any_kids: boolean; children: Child[];
     };
     investment_details: {
       financial_summary: FinancialSummary[];
-      real_estate_investment: { current_market_value: number; rental_income: number }[];
+      real_estate_investment: RealEstateProperty[];
       retirement_investments: {
         epf: { current_value: number; employee_employer_contribution_monthly: number; interest_rate: number }[];
         ppf: { current_value: number; annual_contribution: number; interest_rate: number }[];
@@ -449,7 +453,7 @@ export function ClientsDashboard() {
   const [loadingList, setLoadingList] = useState(true);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [error, setError]             = useState<string | null>(null);
-  const [activeTab, setActiveTab]     = useState<"overview" | "kids" | "liabilities">("overview");
+  const [activeTab, setActiveTab]     = useState<"overview" | "kids" | "spouse" | "liabilities">("overview");
   const [chartMode, setChartMode]     = useState<"detailed" | "liquid">("detailed");
   const [planResult, setPlanResult]   = useState<{
     ok?: boolean;
@@ -530,7 +534,10 @@ export function ClientsDashboard() {
   const mfVal   = (inv?.mutual_funds ?? []).reduce((s, x) => s + x.current_value, 0);
   const eqVal   = (inv?.direct_equity ?? []).reduce((s, x) => s + x.portfolio_value, 0);
   const fdVal   = (inv?.fixed_deposits ?? []).reduce((s, x) => s + x.principal_amount, 0);
-  const reVal   = (inv?.real_estate_investment ?? []).reduce((s, x) => s + x.current_market_value, 0);
+  const reVal   = (inv?.real_estate_investment ?? []).reduce(
+    (s, x) => s + (x.current_market_value ?? x.current_value ?? 0),
+    0,
+  );
   const reitVal = (inv?.reits ?? []).reduce((s, x) => s + x.current_value, 0);
   const pmsVal  = (inv?.pms_aif ?? []).reduce((s, x) => s + x.current_value, 0);
   const bondVal = (inv?.bonds ?? []).reduce((s, x) => s + (x.invested_amount ?? 0), 0);
@@ -582,6 +589,49 @@ export function ClientsDashboard() {
   const eduPlans   = detail?.client_data?.education_planning ?? [];
   const lifeIns    = detail?.client_data?.life_insurance ?? [];
   const kids       = cd?.children ?? [];
+
+  const hasSpouse = !!(cd?.spouse?.spouse_name || cd?.spouse_name || cd?.spouse?.spouse_dob || cd?.spouse_dob);
+
+  const spouseData: SpouseData | null = mergeSpouseData(
+    cd?.spouse,
+    planResult?.summary?.spouse_preview as SpouseData | null | undefined,
+    { spouse_name: cd?.spouse_name, spouse_dob: cd?.spouse_dob },
+  );
+
+  const marriageGoals: MarriageGoalRow[] = (() => {
+    const preview = (planResult?.summary?.marriage_goals_preview ?? []) as MarriageGoalRow[];
+    if (preview.length) return preview;
+    return (goals ?? [])
+      .filter(g => /marriage/i.test(g.goal_name))
+      .map(g => ({
+        goal_name: g.goal_name,
+        child_name: g.goal_name.replace(/\s+Marriage$/i, "").trim() || g.goal_name,
+        target_year: g.target_year,
+        current_cost: g.capital_required_today,
+        future_cost: null,
+        status: "not_funded",
+      }));
+  })();
+
+  const realEstateProperties: RealEstateProperty[] =
+    ((planResult?.summary?.real_estate_preview as RealEstateProperty[] | undefined)?.length
+      ? (planResult!.summary!.real_estate_preview as RealEstateProperty[])
+      : inv?.real_estate_investment) ?? [];
+
+  const detailTabs = (
+    ["overview", "kids", ...(hasSpouse ? (["spouse"] as const) : []), "liabilities"] as const
+  );
+
+  const tabLabel = (tab: (typeof detailTabs)[number]) => {
+    if (tab === "overview") return "Overview";
+    if (tab === "kids") return "Kid's Details";
+    if (tab === "spouse") return "Spouse Details";
+    return "Liabilities & Goals";
+  };
+
+  useEffect(() => {
+    if (!hasSpouse && activeTab === "spouse") setActiveTab("overview");
+  }, [hasSpouse, activeTab]);
 
   const TAB = "px-4 py-1.5 text-xs font-semibold border-b-2 -mb-px cursor-pointer transition-colors";
   const ACTIVE_TAB = `${TAB} border-blue-900 bg-gray-50 text-blue-900 dark:border-blue-400 dark:bg-gray-800 dark:text-blue-300`;
@@ -659,9 +709,9 @@ export function ClientsDashboard() {
             {/* ── Tabs ── */}
             <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
               <div className="flex border-b border-gray-200 px-4 pt-3 dark:border-gray-700">
-                {(["overview", "kids", "liabilities"] as const).map(tab => (
+                {detailTabs.map(tab => (
                   <button key={tab} onClick={() => setActiveTab(tab)} className={activeTab === tab ? ACTIVE_TAB : IDLE_TAB}>
-                    {tab === "overview" ? "Overview" : tab === "kids" ? "Kid's Details" : "Liabilities & Goals"}
+                    {tabLabel(tab)}
                   </button>
                 ))}
               </div>
@@ -675,7 +725,6 @@ export function ClientsDashboard() {
                     <KvGrid items={{
                       Name: cd?.name, "Date of Birth": cd?.date_of_birth,
                       Organization: cd?.organization_name, "Retirement Age": cd?.retirement_age,
-                      Spouse: cd?.spouse_name, "Spouse DOB": cd?.spouse_dob,
                     }} />
 
                     <SectionLabel icon="🏦" text="Retirement Investments" />
@@ -699,12 +748,12 @@ export function ClientsDashboard() {
                       <DataTable rows={inv!.direct_equity.filter(e => e.portfolio_value).map(e => ({ "Portfolio Value": inr(e.portfolio_value) }))} />
                     </>}
 
-                    {(inv?.real_estate_investment ?? []).some(r => r.current_market_value) && <>
-                      <SectionLabel icon="🏠" text="Real Estate" />
-                      <DataTable rows={inv!.real_estate_investment.filter(r => r.current_market_value).map(r => ({
-                        "Market Value": inr(r.current_market_value), "Rental Income": inr(r.rental_income),
-                      }))} />
-                    </>}
+                    {realEstateProperties.some(r => (r.current_market_value ?? r.current_value ?? 0) > 0) && (
+                      <>
+                        <SectionLabel icon="🏠" text="Real Estate" />
+                        <RealEstateTable properties={realEstateProperties} />
+                      </>
+                    )}
 
                     {reitVal > 0 && <>
                       <SectionLabel icon="🏢" text="REITs" />
@@ -798,7 +847,20 @@ export function ClientsDashboard() {
                         "PG Stream": e.post_graduation_stream || "—", "PG Destination": e.post_graduation_destination || "—",
                       }))} />
                     </>}
+
+                    <MarriageGoalsSection goals={marriageGoals} />
                   </>
+                )}
+
+                {/* ── SPOUSE TAB ── */}
+                {activeTab === "spouse" && (
+                  spouseData ? (
+                    <SpouseDetailsPanel spouse={spouseData} />
+                  ) : (
+                    <p className="py-8 text-center text-xs text-gray-400 dark:text-gray-500">
+                      No spouse information available for this client.
+                    </p>
+                  )
                 )}
 
                 {/* ── LIABILITIES TAB ── */}
