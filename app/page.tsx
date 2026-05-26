@@ -6,18 +6,12 @@ import { Header } from "../components/Header";
 import { Footer } from "../components/Footer";
 import { CustomAssistantMessage } from "../components/AssistantMessage";
 import { prompt } from "../lib/prompt";
-import { useCopilotReadable } from "@copilotkit/react-core";
 import { PolicyDocumentHitl } from "../components/PolicyDocumentHitl";
 import { ChartTools } from "../components/ChartTools";
 
 import { Suspense } from "react";
 
 function HomeContent() {
-  useCopilotReadable({
-    description: "Current time",
-    value: new Date().toLocaleTimeString(),
-  });
-
   return (
     <>
       <PolicyDocumentHitl />

@@ -26,8 +26,9 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from langchain.agents import create_agent
+from langchain.agents.middleware import wrap_model_call
 from langchain.tools import tool
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, ToolMessage
 from langchain_openai import AzureChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
 from pydantic import BaseModel, Field
@@ -90,9 +91,13 @@ policy documents.
 
 ## Date-based calculations (current age, years to retirement, time to goals)
 
-When you need today's date or calendar year (current age from date of birth, years until
-retirement, years until a target year, SIP horizon in months/years), call `getCurrentDate`
-first. Do not assume the year from training data.
+You do NOT have access to the current date in your context. You MUST call `getCurrentDate`
+before answering ANY question that involves:
+- The client's current age (from date of birth)
+- Years remaining to a goal or retirement
+- Any calculation using "today" or the current calendar year
+
+Never assume or guess the date from training data. Always call the tool first.
 
 ## Charts in chat (frontend components — you MUST call the tool)
 
@@ -219,14 +224,15 @@ async def run_startup_self_test() -> None:
 def get_current_date() -> str:
     """Returns today's date (ISO) and calendar year for age, retirement, and time-to-goal calculations."""
     today = date.today()
-    return json.dumps(
-        {
-            "date": today.isoformat(),
-            "year": today.year,
-            "month": today.month,
-            "day": today.day,
-        }
-    )
+    payload = {
+        "date": today.isoformat(),
+        "year": today.year,
+        "month": today.month,
+        "day": today.day,
+    }
+    log.info("getCurrentDate tool called - returning %s", payload)
+    print(f"[getCurrentDate] tool called - returning date: {today.isoformat()}")
+    return json.dumps(payload)
 
 
 @tool("searchInternet")
@@ -281,11 +287,24 @@ async def lifespan(app: FastAPI):
     yield
 
 
+@wrap_model_call
+async def force_get_current_date_first(request, handler):
+    """Force getCurrentDate once per thread before the model can answer date-based questions."""
+    already_has_date = any(
+        isinstance(m, ToolMessage) and m.name == "getCurrentDate"
+        for m in request.messages
+    )
+    if not already_has_date:
+        log.info("Forcing getCurrentDate tool call (first turn in thread)")
+        request = request.override(tool_choice="getCurrentDate")
+    return await handler(request)
+
+
 def build_graph():
     return create_agent(
         create_model(),
         tools=[get_current_date, search_internet, request_policy_document],
-        middleware=[CopilotKitMiddleware()],
+        middleware=[force_get_current_date_first, CopilotKitMiddleware()],
         system_prompt=SYSTEM_PROMPT,
         checkpointer=MemorySaver(),
     )

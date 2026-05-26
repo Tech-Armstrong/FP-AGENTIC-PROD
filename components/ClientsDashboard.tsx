@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { useTheme } from "next-themes";
 import { useCopilotAction, useCopilotReadable } from "@copilotkit/react-core";
 import { SearchResults } from "./generative-ui/SearchResults";
+import { CurrentDateTool } from "./generative-ui/CurrentDateTool";
 import { FinancialPlanPanel } from "./FinancialPlanPanel";
 import { DashboardSidebar } from "./DashboardSidebar";
 
@@ -488,6 +489,15 @@ export function ClientsDashboard() {
           message:
             "No financial plan has been generated for this client yet. Ask the user to click Make plan first, or answer from input data only.",
         },
+  });
+
+  useCopilotAction({
+    name: "getCurrentDate",
+    available: "disabled",
+    description:
+      "Returns today's date (ISO) and calendar year for age, retirement, and time-to-goal calculations.",
+    parameters: [],
+    render: ({ status }) => <CurrentDateTool status={status} />,
   });
 
   useCopilotAction({

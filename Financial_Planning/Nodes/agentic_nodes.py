@@ -32,6 +32,11 @@ from datetime import date
 
 load_dotenv()
 
+def _today_context() -> str:
+    today = date.today()
+    return f"Today's date is {today.isoformat()} (calendar year {today.year})."
+
+
 AZURE_API_KEY=os.getenv('AZURE_API_KEY')
 AZURE_API_BASE=os.getenv('AZURE_API_BASE')
 AZURE_API_VERSION=os.getenv('AZURE_API_VERSION')
@@ -64,10 +69,11 @@ def risk_appetite_assessment(state: ClientState):
         model=llm_azure,
         tools=[get_current_date, risk_analysis],
         system=risk_appetite_prompt,
+        force_first_tool="get_current_date",
     )
     risk_llm=llm_azure.with_structured_output(RiskSchema)
     
-    response=agent.graph.invoke({'messages': [HumanMessage(content=f"The customer's name is {client_name}, current assets include {client_assets} and will be retired in {year_to_retire} years.")]})
+    response=agent.graph.invoke({'messages': [HumanMessage(content=f"{_today_context()} The customer's name is {client_name}, current assets include {client_assets} and will be retired in {year_to_retire} years.")]})
     response=risk_llm.invoke(response['messages'][-1].content)
     risk_appetite_analysis={'risk_appetite': response.risk_assessment, 'reason': response.reason_of_risk_assessment}
 
@@ -95,10 +101,11 @@ def goal_prioritization(state: ClientState):
         model=llm_azure,
         tools=[get_current_date, calculate_priority_score, sort_goals_by_priority],
         system=goal_prioritization_system_prompt,
+        force_first_tool="get_current_date",
     )
     structured_goal_llm=llm_azure.with_structured_output(PrioritizedGoals)
 
-    result=agent.graph.invoke({'messages': [HumanMessage(content=f'Prioritize the goals, goals: {goalS}, Financial Info: {financial_infO}, client age: {client_agE}')]})
+    result=agent.graph.invoke({'messages': [HumanMessage(content=f'{_today_context()} Prioritize the goals, goals: {goalS}, Financial Info: {financial_infO}, client age: {client_agE}')]})
     # print(result['messages'][-1].content)
     response=structured_goal_llm.invoke(f'Format the goals such that they align with the schema expected. The sorted goal are: {result['messages'][-1].content}').goals
     sorted_goals=[g.dict() for g in response]

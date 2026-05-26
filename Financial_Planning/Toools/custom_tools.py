@@ -20,6 +20,9 @@ from langchain.tools import tool
 from datetime import date, datetime
 from typing import List, Dict
 import json
+import logging
+
+log = logging.getLogger(__name__)
 
 ########################## current date ################################################
 
@@ -30,21 +33,22 @@ def get_current_date() -> str:
     and other date-based calculations. Call this instead of guessing the year.
     """
     today = date.today()
-    return json.dumps(
-        {
-            "date": today.isoformat(),
-            "year": today.year,
-            "month": today.month,
-            "day": today.day,
-        }
-    )
+    payload = {
+        "date": today.isoformat(),
+        "year": today.year,
+        "month": today.month,
+        "day": today.day,
+    }
+    log.info("get_current_date tool called — returning %s", payload)
+    print(f"[get_current_date] tool called - returning date: {today.isoformat()}")
+    return json.dumps(payload)
 
 ########################## goal prioritization ################################################
 
 @tool
 def calculate_priority_score(weight: float, target_year: int) -> float:
     """Calculates the priority score for a financial goal."""
-    time_left = target_year - datetime.now().year
+    time_left = target_year - date.today().year
     if time_left <= 0: time_left = 0.1
     return round((weight * 0.6) + ((1 / time_left) * 0.4),1)
 
