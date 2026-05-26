@@ -17,7 +17,12 @@ from Financial_Planning.Agent.agent import (Agent)
 from langchain_openai import AzureChatOpenAI
 from langchain_core.messages import HumanMessage
 from dotenv import load_dotenv
-from Financial_Planning.Toools.custom_tools import (risk_analysis, calculate_priority_score, sort_goals_by_priority)
+from Financial_Planning.Toools.custom_tools import (
+    get_current_date,
+    risk_analysis,
+    calculate_priority_score,
+    sort_goals_by_priority,
+)
 from Financial_Planning.Utilities.prompts import (risk_appetite_prompt, goal_prioritization_system_prompt)
 from Financial_Planning.Models.llm_schemas import (RiskSchema, PrioritizedGoals)
 from Financial_Planning.Utilities.utility_functions import (sip_required)
@@ -55,7 +60,11 @@ def risk_appetite_assessment(state: ClientState):
     year_to_retire={state['client_data']['client_data']['retirement_age']-state['client_data']['client_data']['client_age']}
     client_name=state['client_data']['client_data']['name']
 
-    agent=Agent(model=llm_azure, tools=[risk_analysis], system=risk_appetite_prompt)
+    agent=Agent(
+        model=llm_azure,
+        tools=[get_current_date, risk_analysis],
+        system=risk_appetite_prompt,
+    )
     risk_llm=llm_azure.with_structured_output(RiskSchema)
     
     response=agent.graph.invoke({'messages': [HumanMessage(content=f"The customer's name is {client_name}, current assets include {client_assets} and will be retired in {year_to_retire} years.")]})
@@ -82,7 +91,11 @@ def goal_prioritization(state: ClientState):
     client_agE=state['client_data']['client_data']['client_age']         #client age is compulsory data
     financial_infO=state['financial_overview']                                           
 
-    agent=Agent(model=llm_azure, tools=[calculate_priority_score, sort_goals_by_priority], system=goal_prioritization_system_prompt)
+    agent=Agent(
+        model=llm_azure,
+        tools=[get_current_date, calculate_priority_score, sort_goals_by_priority],
+        system=goal_prioritization_system_prompt,
+    )
     structured_goal_llm=llm_azure.with_structured_output(PrioritizedGoals)
 
     result=agent.graph.invoke({'messages': [HumanMessage(content=f'Prioritize the goals, goals: {goalS}, Financial Info: {financial_infO}, client age: {client_agE}')]})

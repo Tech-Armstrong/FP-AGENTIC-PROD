@@ -12,12 +12,32 @@ What this file contains:
 - calculate_overall_fees: Multiplies annual fees by duration to get total program cost
 - currency_conversion: Converts foreign currency to INR using conversion ratio
 - avg_fees: Computes arithmetic mean of college fees list
+- get_current_date: Returns today's date for age, retirement, and time-to-goal calculations
 - risk_analysis: Analyzes risk appetite based on equity exposure and years to retirement (Low/Medium/Medium to High/Medium to Low)
 """
 
 from langchain.tools import tool
-from datetime import datetime
+from datetime import date, datetime
 from typing import List, Dict
+import json
+
+########################## current date ################################################
+
+@tool
+def get_current_date() -> str:
+    """
+    Returns today's calendar date for age, years-to-retirement, years-to-goal,
+    and other date-based calculations. Call this instead of guessing the year.
+    """
+    today = date.today()
+    return json.dumps(
+        {
+            "date": today.isoformat(),
+            "year": today.year,
+            "month": today.month,
+            "day": today.day,
+        }
+    )
 
 ########################## goal prioritization ################################################
 

@@ -3,12 +3,12 @@ RSU Market Data Pipeline - S&P 500 Closing Prices & USD/INR Conversion Rate
 
 What this file does:
 This script implements a data pipeline that fetches the latest closing prices for
-S&P 500 stocks using yfinance, and scrapes the live USD to INR conversion rate via
-Tavily web search + LLM extraction. The combined data is persisted as a Parquet file
+S&P 500 stocks using yfinance, and fetches the live USD to INR rate from Google Finance.
+The combined data is persisted as a Parquet file
 for consumption by the RSU financial planning module.
 
 What this file contains:
-- scrape_usd_to_inr_rate: Fetches live USD/INR rate via Tavily + LLM extraction
+- scrape_usd_to_inr_rate: Fetches live USD/INR rate from Google Finance
 - fetch_sp500_closing_prices: Downloads latest closing prices from yfinance for all tickers
 - build_rsu_market_data: Orchestrates the full pipeline and returns a DataFrame
 - save_market_data_parquet: Persists the DataFrame to a Parquet file
@@ -19,19 +19,19 @@ What this file contains:
 """
 
 import os
-import re
 import json
 import yfinance as yf
 import pandas as pd
 from datetime import date, datetime
 from typing import Optional, List
 from dotenv import load_dotenv
-from langchain_openai import AzureChatOpenAI
-from langchain_core.messages import HumanMessage
 
 from pathlib import Path
 
-from Financial_Planning.Toools.standard_tools import tavily_tool
+from Financial_Planning.RSU.google_finance_fx import (
+    GOOGLE_FINANCE_USD_INR_URL,
+    fetch_usd_inr_from_google_finance,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _FP_RSU_DIR = Path(__file__).resolve().parent
@@ -46,19 +46,6 @@ LAST_UPDATE_FILE = str(_FP_RSU_DIR / "rsu_last_update.json")
 # ======================== ENV / LLM SETUP ========================
 
 load_dotenv()
-
-AZURE_API_KEY = os.getenv("AZURE_API_KEY")
-AZURE_API_BASE = os.getenv("AZURE_API_BASE")
-AZURE_API_VERSION = os.getenv("AZURE_API_VERSION")
-AZURE_DEPLOYMENT_NAME = os.getenv("AZURE_DEPLOYMENT_NAME")
-
-llm_azure = AzureChatOpenAI(
-    api_key=AZURE_API_KEY,
-    azure_endpoint=AZURE_API_BASE,
-    api_version=AZURE_API_VERSION,
-    deployment_name=AZURE_DEPLOYMENT_NAME,
-    temperature=0,
-)
 
 # Refresh interval in days — skip re-scrape if data is newer than this
 REFRESH_INTERVAL_DAYS = 1
@@ -121,39 +108,13 @@ SP500_TICKERS = [
 
 def scrape_usd_to_inr_rate() -> float:
     """
-    Scrape the current USD to INR conversion rate using Tavily + LLM extraction.
+    Fetch the current USD to INR rate from Google Finance only.
 
     Returns:
         float: Current USD to INR exchange rate.
     """
-    query = f"USD to INR conversion rate today {date.today().strftime('%B %Y')}"
-    print(f"\nFetching USD/INR rate: {query}")
-
-    search_results = tavily_tool.invoke({"query": query})
-
-    extraction_prompt = f"""You are a currency data extraction expert.
-From the search results below, extract the current USD to INR exchange rate.
-
-Search results:
-{search_results}
-
-Return ONLY a single float number representing how many Indian Rupees equal 1 US Dollar.
-Example: if 1 USD = 83.47 INR, return exactly: 83.47
-Do not include any text, currency symbols, or explanation — just the number."""
-
-    response = llm_azure.invoke([HumanMessage(content=extraction_prompt)])
-    rate_text = response.content.strip()
-
-    matches = re.findall(r'\d+(?:\.\d+)?', rate_text)
-    if not matches:
-        raise ValueError(f"Could not parse USD/INR rate from LLM response: {rate_text}")
-
-    rate = float(matches[0])
-
-    # Sanity check
-    if not (60.0 <= rate <= 150.0):
-        raise ValueError(f"USD/INR rate {rate} is outside expected range [60, 150]")
-
+    print(f"\nFetching USD/INR from Google Finance: {GOOGLE_FINANCE_USD_INR_URL}")
+    rate = fetch_usd_inr_from_google_finance()
     print(f"USD to INR rate: {rate}")
     return rate
 
@@ -215,7 +176,7 @@ def fetch_sp500_closing_prices(tickers: Optional[List[str]] = None) -> pd.DataFr
 def build_rsu_market_data(tickers: Optional[List[str]] = None) -> pd.DataFrame:
     """
     Orchestrates the full pipeline:
-    1. Fetch USD/INR rate via Tavily
+    1. Fetch USD/INR rate from Google Finance
     2. Fetch S&P 500 closing prices via yfinance
     3. Compute INR prices and assemble the final DataFrame
 
@@ -230,7 +191,7 @@ def build_rsu_market_data(tickers: Optional[List[str]] = None) -> pd.DataFrame:
     print("RSU MARKET DATA PIPELINE")
     print("=" * 60)
 
-    # Step 1: USD/INR rate (Tavily)
+    # Step 1: USD/INR rate (Google Finance)
     print("\n[1/2] Fetching USD to INR conversion rate...")
     usd_to_inr = scrape_usd_to_inr_rate()
 

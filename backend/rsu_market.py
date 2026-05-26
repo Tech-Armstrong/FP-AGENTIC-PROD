@@ -1,20 +1,27 @@
 """
-RSU market data: S&P 500 closing prices (yfinance) + USD/INR (Tavily).
+RSU market data: S&P 500 closing prices (yfinance) + USD/INR (Google Finance).
 Tranche value = price_usd * usd_to_inr_rate * no_shares  (= price_inr * no_shares).
 """
 
 from __future__ import annotations
 
 import json
-import os
-import re
+import sys
 from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
 
 import pandas as pd
-import requests
 import yfinance as yf
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from Financial_Planning.RSU.google_finance_fx import (  # noqa: E402
+    GOOGLE_FINANCE_USD_INR_URL,
+    fetch_usd_inr_from_google_finance,
+)
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 PARQUET_FILE = DATA_DIR / "rsu_market_data.parquet"
@@ -63,36 +70,8 @@ def needs_refresh() -> bool:
         return True
 
 
-USD_INR_MIN = 60.0
-USD_INR_MAX = 150.0
-
-# Explicit FX phrases (avoid grabbing day-of-month like "May 19")
-_FX_PATTERNS = [
-    re.compile(
-        r"1\s*(?:USD|US\s*\$|U\.?S\.?\s*Dollar)\s*[=:]\s*([\d]{2,3}(?:\.\d{1,4})?)\s*(?:INR|₹|Rs\.?|Rupees?)",
-        re.I,
-    ),
-    re.compile(
-        r"([\d]{2,3}(?:\.\d{1,4})?)\s*(?:INR|₹|Rs\.?|Rupees?)\s*(?:per|for|to)\s*(?:1\s*)?(?:USD|US\s*\$)",
-        re.I,
-    ),
-    re.compile(
-        r"(?:USD|US\s*\$)\s*(?:to|/|-)\s*(?:INR|₹)\s*[=:]\s*([\d]{2,3}(?:\.\d{1,4})?)",
-        re.I,
-    ),
-    re.compile(
-        r"(?:exchange\s+rate|conversion\s+rate|rate)\s*(?:is|of|:)?\s*([\d]{2,3}(?:\.\d{1,4})?)",
-        re.I,
-    ),
-]
-
-
-def _rate_in_range(value: float) -> bool:
-    return USD_INR_MIN <= value <= USD_INR_MAX
-
-
 def _cached_usd_to_inr_rate() -> Optional[float]:
-    """Last USD/INR from parquet (used when Tavily parsing fails)."""
+    """Last USD/INR from parquet (fallback only if Google Finance fetch fails)."""
     if not PARQUET_FILE.exists():
         return None
     try:
@@ -100,78 +79,27 @@ def _cached_usd_to_inr_rate() -> Optional[float]:
         if df.empty or "usd_to_inr_rate" not in df.columns:
             return None
         rate = float(df["usd_to_inr_rate"].iloc[0])
-        return rate if _rate_in_range(rate) else None
+        return rate
     except Exception:
         return None
 
 
-def _parse_usd_to_inr_from_text(text: str) -> Optional[float]:
-    """Extract USD/INR from search snippets; never use arbitrary first number."""
-    for pattern in _FX_PATTERNS:
-        for match in pattern.finditer(text):
-            try:
-                rate = float(match.group(1))
-            except (ValueError, IndexError):
-                continue
-            if _rate_in_range(rate):
-                return rate
-
-    in_range: list[float] = []
-    for raw in re.findall(r"\b(\d{2,3}(?:\.\d{1,4})?)\b", text):
-        try:
-            rate = float(raw)
-        except ValueError:
-            continue
-        if _rate_in_range(rate):
-            in_range.append(rate)
-
-    if not in_range:
-        return None
-
-    # Prefer the most frequently cited rate in snippets
-    rounded = [round(r, 2) for r in in_range]
-    return float(max(set(rounded), key=rounded.count))
-
-
 def scrape_usd_to_inr_rate(*, allow_cached_fallback: bool = True) -> float:
-    api_key = os.getenv("TAVILY_API_KEY", "").strip()
-    if not api_key:
-        cached = _cached_usd_to_inr_rate()
-        if cached is not None:
-            return cached
-        raise RuntimeError("TAVILY_API_KEY is not configured")
+    """
+    Fetch USD/INR from Google Finance only.
 
-    query = f"USD INR exchange rate 1 dollar equals rupees {date.today().isoformat()}"
-    resp = requests.post(
-        "https://api.tavily.com/search",
-        json={
-            "api_key": api_key,
-            "query": query,
-            "max_results": 5,
-            "search_depth": "basic",
-        },
-        timeout=60,
-    )
-    resp.raise_for_status()
-    body = resp.json()
-    chunks = [
-        r.get("content", "") or ""
-        for r in body.get("results", [])
-    ]
-    text = " ".join(chunks)
-    rate = _parse_usd_to_inr_from_text(text)
-    if rate is not None:
-        return rate
-
-    if allow_cached_fallback:
-        cached = _cached_usd_to_inr_rate()
-        if cached is not None:
-            return cached
-
-    raise RuntimeError(
-        "Could not parse USD/INR from Tavily results (avoided mis-reading dates). "
-        "Ensure parquet exists or check TAVILY_API_KEY."
-    )
+    See: https://www.google.com/finance/beta/quote/USD-INR
+    """
+    try:
+        return fetch_usd_inr_from_google_finance(url=GOOGLE_FINANCE_USD_INR_URL)
+    except Exception as exc:
+        if allow_cached_fallback:
+            cached = _cached_usd_to_inr_rate()
+            if cached is not None:
+                return cached
+        raise RuntimeError(
+            f"Failed to fetch USD/INR from Google Finance ({GOOGLE_FINANCE_USD_INR_URL}): {exc}"
+        ) from exc
 
 
 def _to_scalar_price(value) -> Optional[float]:

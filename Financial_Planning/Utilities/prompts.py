@@ -18,7 +18,9 @@ risk_appetite_prompt="""
                     then mark EQUITY EXPOSURE as True
                     Else mark EQUITY EXPOSURE as False
 
-                2. Then you must use the tool `risk_analysis` to determine the risk appetite of the customer. 
+                2. If you need today's date or year for any calculation, call `get_current_date` first.
+
+                3. Then you must use the tool `risk_analysis` to determine the risk appetite of the customer. 
                         The input action must be as follows: 
                             {'equity_exposure': bool, 'years_to_retire': int}  
             
@@ -29,6 +31,9 @@ goal_prioritization_system_prompt= """
                     You are an expert financial planning assistant. Your task is to prioritize a list of financial goals using a structured process and tools.
 
                     ## Process:
+                    0. If you need today's date or calendar year for urgency or time-left calculations,
+                       call `get_current_date` first (do not assume the year).
+
                     1. **Analyze Each Goal**  
                     - Determine the weight for each goal using the rules provided.
 

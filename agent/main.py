@@ -15,6 +15,7 @@ import os
 import sys
 import traceback
 from contextlib import asynccontextmanager
+from datetime import date
 from pathlib import Path
 
 import uvicorn
@@ -86,6 +87,12 @@ policy/ULIP intent), answer normally and do not request uploads.
 
 Use searchInternet when the user needs information beyond dashboard data and uploaded
 policy documents.
+
+## Date-based calculations (current age, years to retirement, time to goals)
+
+When you need today's date or calendar year (current age from date of birth, years until
+retirement, years until a target year, SIP horizon in months/years), call `getCurrentDate`
+first. Do not assume the year from training data.
 
 ## Charts in chat (frontend components — you MUST call the tool)
 
@@ -208,6 +215,20 @@ async def run_startup_self_test() -> None:
         ) from exc
 
 
+@tool("getCurrentDate")
+def get_current_date() -> str:
+    """Returns today's date (ISO) and calendar year for age, retirement, and time-to-goal calculations."""
+    today = date.today()
+    return json.dumps(
+        {
+            "date": today.isoformat(),
+            "year": today.year,
+            "month": today.month,
+            "day": today.day,
+        }
+    )
+
+
 @tool("searchInternet")
 def search_internet(query: str) -> str:
     """Searches the internet for information."""
@@ -243,11 +264,13 @@ def _log_run_agent_input(input_data: RunAgentInput) -> None:
 async def lifespan(app: FastAPI):
     await run_startup_self_test()
     bound_tools = [
+        get_current_date.name,
         search_internet.name,
         request_policy_document.name,
     ]
     log.info("Bound backend tools: %s (barChart/pieChart are frontend useComponent tools)", bound_tools)
     for required in (
+        "getCurrentDate",
         "searchInternet",
         "request_policy_document",
     ):
@@ -261,7 +284,7 @@ async def lifespan(app: FastAPI):
 def build_graph():
     return create_agent(
         create_model(),
-        tools=[search_internet, request_policy_document],
+        tools=[get_current_date, search_internet, request_policy_document],
         middleware=[CopilotKitMiddleware()],
         system_prompt=SYSTEM_PROMPT,
         checkpointer=MemorySaver(),

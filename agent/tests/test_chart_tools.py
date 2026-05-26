@@ -7,8 +7,12 @@ import main
 
 def test_static_backend_tools_exclude_charts():
     """barChart/pieChart come from CopilotKitMiddleware + frontend useComponent, not static @tool."""
-    static = {main.search_internet.name, main.request_policy_document.name}
-    assert static == {"searchInternet", "request_policy_document"}
+    static = {
+        main.get_current_date.name,
+        main.search_internet.name,
+        main.request_policy_document.name,
+    }
+    assert static == {"getCurrentDate", "searchInternet", "request_policy_document"}
     assert "showBarChart" not in static
     assert "showPieChart" not in static
     assert "barChart" not in static
