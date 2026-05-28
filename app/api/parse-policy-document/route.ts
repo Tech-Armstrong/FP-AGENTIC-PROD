@@ -1,32 +1,62 @@
 import { NextResponse } from "next/server";
-
-const AGENT_BASE =
-  process.env.LANGGRAPH_AGENT_URL?.replace(/\/copilotkit\/?$/, "") ||
-  "http://localhost:8000";
+import { OCRServiceError, summarizeDocument } from "@/lib/ocrService";
+import { PolicyUploadValidationError, validatePolicyPdf } from "@/lib/validatePolicyUpload";
 
 export async function POST(req: Request) {
-  let body: Record<string, unknown>;
+  const contentType = req.headers.get("content-type") || "";
+
+  if (!contentType.includes("multipart/form-data")) {
+    return NextResponse.json(
+      { detail: "Expected multipart/form-data with a PDF file field named 'file'" },
+      { status: 400 },
+    );
+  }
+
+  let form: FormData;
   try {
-    body = await req.json();
+    form = await req.formData();
   } catch {
-    return NextResponse.json({ detail: "Invalid JSON body" }, { status: 400 });
+    return NextResponse.json({ detail: "Invalid multipart body" }, { status: 400 });
+  }
+
+  const file = form.get("file");
+  if (!(file instanceof File)) {
+    return NextResponse.json({ detail: "Missing file upload" }, { status: 400 });
   }
 
   try {
-    const res = await fetch(`${AGENT_BASE}/parse-policy-document`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      cache: "no-store",
-    });
-    const data = await res.json();
-    return NextResponse.json(data, { status: res.ok ? 200 : res.status });
+    validatePolicyPdf(file);
   } catch (err) {
+    if (err instanceof PolicyUploadValidationError) {
+      return NextResponse.json({ detail: err.message }, { status: 400 });
+    }
+    throw err;
+  }
+
+  try {
+    const bytes = await file.arrayBuffer();
+    const policySummary = await summarizeDocument(bytes, file.name, file.type || "application/pdf");
+    const contextText = JSON.stringify(policySummary);
+
+    return NextResponse.json({
+      policy_summary: policySummary,
+      char_count: contextText.length,
+      filename: file.name,
+    });
+  } catch (err) {
+    if (err instanceof OCRServiceError) {
+      return NextResponse.json(
+        {
+          detail:
+            "Couldn't process the document right now. Please retry in a moment.",
+          error: err.message,
+        },
+        { status: 502 },
+      );
+    }
     return NextResponse.json(
-      {
-        detail: `Could not reach agent parser: ${(err as Error).message}`,
-      },
-      { status: 502 },
+      { detail: "Unexpected error processing document" },
+      { status: 500 },
     );
   }
 }

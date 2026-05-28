@@ -16,6 +16,12 @@ from policy_documents import (
     set_cached_policy,
 )
 
+SAMPLE_SUMMARY = {
+    "insurer": "Sample Life",
+    "sum_assured": "1000000",
+    "annual_premium": "25000",
+}
+
 
 def test_process_upload_skip():
     out = json.loads(
@@ -29,43 +35,52 @@ def test_process_upload_skip():
     assert "caveat" in out["message"].lower() or "general" in out["message"].lower()
 
 
-def test_process_upload_with_extracted_text_caches():
+def test_process_upload_with_policy_summary_caches():
     payload = {
         "uploaded": True,
         "filename": "p.pdf",
         "fileType": "application/pdf",
-        "extractedText": "Surrender value is 100000 INR",
+        "policySummary": SAMPLE_SUMMARY,
     }
     out = json.loads(
         process_upload_response(payload, thread_id="thread-a", document_type="ulip")
     )
     assert out["status"] == "uploaded"
-    assert "Surrender value" in out["extracted_text"]
+    assert out["policy_summary"] == SAMPLE_SUMMARY
+    assert "Sample Life" in out["extracted_text"]
     cached = get_cached_policy("thread-a")
     assert cached is not None
-    assert cached["extracted_text"] == out["extracted_text"]
+    assert cached["policy_summary"]["insurer"] == "Sample Life"
 
 
-def test_process_upload_decodes_and_parses_pdf(mock_reader_text: str = "PARSED_FROM_BYTES"):
+def test_process_upload_rejects_raw_pdf_filedata():
     b64 = base64.b64encode(b"%PDF-fake").decode()
-    with patch("pypdf.PdfReader") as reader_cls:
-        page = MagicMock()
-        page.extract_text.return_value = mock_reader_text
-        reader_cls.return_value.pages = [page]
-        out = json.loads(
-            process_upload_response(
-                {
-                    "uploaded": True,
-                    "filename": "policy.pdf",
-                    "fileType": "application/pdf",
-                    "fileData": b64,
-                },
-                thread_id="t2",
-                document_type="insurance_policy",
-            )
+    out = json.loads(
+        process_upload_response(
+            {
+                "uploaded": True,
+                "filename": "policy.pdf",
+                "fileType": "application/pdf",
+                "fileData": b64,
+            },
+            thread_id="t2",
+            document_type="insurance_policy",
         )
-    assert out["status"] == "uploaded"
-    assert out["extracted_text"] == mock_reader_text
+    )
+    assert out["status"] == "error"
+    assert "Raw PDF" in out["error"]
+
+
+def test_process_upload_missing_summary_errors():
+    out = json.loads(
+        process_upload_response(
+            {"uploaded": True, "filename": "p.pdf"},
+            thread_id="t3",
+            document_type="insurance_policy",
+        )
+    )
+    assert out["status"] == "error"
+    assert "OCR" in out["error"] or "summary" in out["error"].lower()
 
 
 def test_oversized_file_rejected():
@@ -93,7 +108,6 @@ def test_pdf_fixture_extracts_known_text(sample_pdf_bytes: bytes):
     if "SAMPLE_POLICY_KNOWN_TEXT" in text:
         assert "SAMPLE_POLICY_KNOWN_TEXT" in text
     else:
-        # Mock path already covered; fixture generation may vary by pypdf
         with patch("pypdf.PdfReader") as reader_cls:
             page = MagicMock()
             page.extract_text.return_value = "SAMPLE_POLICY_KNOWN_TEXT"
@@ -111,9 +125,10 @@ def test_memory_same_thread_no_reupload_needed():
         {
             "document_type": "ulip",
             "filename": "x.pdf",
-            "extracted_text": "Cached corpus text",
-            "char_count": 18,
+            "policy_summary": SAMPLE_SUMMARY,
+            "extracted_text": json.dumps(SAMPLE_SUMMARY),
+            "char_count": 50,
         },
     )
     cached = get_cached_policy("mem-thread")
-    assert cached["extracted_text"] == "Cached corpus text"
+    assert cached["policy_summary"]["insurer"] == "Sample Life"

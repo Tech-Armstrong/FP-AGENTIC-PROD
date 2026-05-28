@@ -1,4 +1,5 @@
-# Start the full local stack: LangGraph agent (:8000), Airtable API (:8001), Next.js (:3000).
+# Start the full local stack: OCR service (:8010), LangGraph agent (:8000),
+# Airtable API (:8001), Next.js (:3000).
 # Usage:  .\scripts\start-dev.ps1
 #         .\scripts\start-dev.ps1 -SkipInstall
 
@@ -36,9 +37,8 @@ function Ensure-Venv {
 if (-not $SkipInstall) {
     Ensure-Venv
 
-    Write-Step "Installing Python dependencies (backend + agent)"
+    Write-Step "Installing Python dependencies (backend + agent + OCR service)"
     & $venvPython -m pip install -r requirements.txt
-    & $venvPython -m pip install -r agent\requirements.txt
 
     if (-not (Test-Path "node_modules")) {
         Write-Step "Installing npm dependencies"
@@ -71,6 +71,9 @@ function Start-ServiceWindow {
     return Start-Process -FilePath $shell -ArgumentList $argList -PassThru -WorkingDirectory $RepoRoot
 }
 
+Write-Step "Starting OCR policy service on http://localhost:8010"
+$processes += Start-ServiceWindow -Title "OCR :8010" -WorkingDirectory (Join-Path $RepoRoot "ocr-service") -Command "& '$venvPython' main.py"
+
 Write-Step "Starting LangGraph agent on http://localhost:8000"
 $processes += Start-ServiceWindow -Title "Agent :8000" -WorkingDirectory (Join-Path $RepoRoot "agent") -Command "& '$venvPython' main.py"
 
@@ -83,8 +86,12 @@ $processes += Start-ServiceWindow -Title "Next.js :3000" -WorkingDirectory $Repo
 Write-Host ""
 Write-Host "All services are starting in separate terminal windows." -ForegroundColor Green
 Write-Host "  App:     http://localhost:3000"
+Write-Host "  OCR:     http://localhost:8010/health"
 Write-Host "  Agent:   http://localhost:8000/copilotkit/health"
 Write-Host "  Backend: http://localhost:8001/health"
+Write-Host ""
+Write-Host "Chat policy uploads need OCR_SERVICE_URL=http://localhost:8010 in .env"
+Write-Host "(and Azure DI keys in ocr-service/.env for real PDF summarization)."
 Write-Host ""
 Write-Host "Press Enter here to stop all services and close their windows."
 Read-Host | Out-Null

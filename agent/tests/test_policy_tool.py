@@ -45,21 +45,22 @@ def test_cached_thread_returns_already_uploaded():
 
 
 def test_finalize_client_upload_matches_respond_contract():
+    summary = {"insurer": "Test", "annual_premium": "5000"}
     result = json.loads(
         finalize_client_upload(
             {
                 "uploaded": True,
                 "filename": "p.pdf",
                 "fileType": "application/pdf",
-                "fileData": "abc",
-                "extractedText": "Premium is 5000",
+                "policySummary": summary,
             },
             thread_id="fin-1",
             document_type="insurance_policy",
         )
     )
     assert result["status"] == "uploaded"
-    assert result["extracted_text"] == "Premium is 5000"
+    assert result["policy_summary"] == summary
+    assert "Test" in result["extracted_text"]
 
 
 def test_skip_finalize():

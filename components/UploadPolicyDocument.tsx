@@ -3,18 +3,17 @@
 import * as React from "react";
 import { FileUp, Upload, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { validatePolicyPdf, PolicyUploadValidationError } from "@/lib/validatePolicyUpload";
 
-const MAX_BYTES = 10 * 1024 * 1024;
-const ACCEPT = ".pdf,.png,.jpg,.jpeg,.webp";
+const ACCEPT = ".pdf";
 
-/** Agreed respond(...) payload — must match backend process_upload_response. */
+/** Agreed respond(...) payload — OCR summary only; no raw PDF bytes. */
 export type PolicyUploadRespondPayload =
   | {
       uploaded: true;
       filename: string;
       fileType: string;
-      fileData: string;
-      extractedText?: string;
+      policySummary: Record<string, unknown>;
     }
   | { uploaded: false };
 
@@ -31,54 +30,31 @@ function labelForType(documentType: string): string {
   return documentType === "ulip" ? "ULIP" : "Insurance Policy";
 }
 
-async function fileToBase64(file: File): Promise<string> {
-  if (typeof file.arrayBuffer === "function") {
-    const buf = await file.arrayBuffer();
-    const bytes = new Uint8Array(buf);
-    let binary = "";
-    for (let i = 0; i < bytes.length; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
-  }
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = String(reader.result ?? "");
-      const base64 = dataUrl.includes(",") ? dataUrl.split(",", 2)[1] : dataUrl;
-      resolve(base64);
-    };
-    reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"));
-    reader.readAsDataURL(file);
-  });
-}
-
-async function parseOnServer(
+async function summarizeOnServer(
   file: File,
-  fileData: string,
-  threadId: string,
-  documentType: string,
-): Promise<{ extracted_text?: string; detail?: string }> {
+): Promise<{ policy_summary: Record<string, unknown> }> {
+  const form = new FormData();
+  form.append("file", file, file.name);
   const res = await fetch("/api/parse-policy-document", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      filename: file.name,
-      fileType: file.type || "application/octet-stream",
-      fileData,
-      thread_id: threadId,
-      document_type: documentType,
-    }),
+    body: form,
   });
   const data = (await res.json()) as {
-    extracted_text?: string;
+    policy_summary?: Record<string, unknown>;
     detail?: string;
     error?: string;
   };
   if (!res.ok) {
-    throw new Error(data.detail || data.error || "Failed to parse document");
+    throw new Error(
+      data.detail ||
+        data.error ||
+        "Couldn't process the document right now, please retry.",
+    );
   }
-  return data;
+  if (!data.policy_summary) {
+    throw new Error("OCR service returned no policy summary");
+  }
+  return { policy_summary: data.policy_summary };
 }
 
 export function UploadPolicyDocument({
@@ -86,7 +62,7 @@ export function UploadPolicyDocument({
   reason,
   status,
   executing,
-  threadId = "default",
+  threadId: _threadId = "default",
   respond,
 }: Props) {
   const [file, setFile] = React.useState<File | null>(null);
@@ -105,12 +81,17 @@ export function UploadPolicyDocument({
       setFile(null);
       return;
     }
-    if (picked.size > MAX_BYTES) {
-      setError("File is too large. Maximum size is 10 MB.");
+    try {
+      validatePolicyPdf(picked);
+      setFile(picked);
+    } catch (err) {
+      setError(
+        err instanceof PolicyUploadValidationError
+          ? err.message
+          : "Invalid file",
+      );
       setFile(null);
-      return;
     }
-    setFile(picked);
   };
 
   const onDrop = (e: React.DragEvent) => {
@@ -125,19 +106,12 @@ export function UploadPolicyDocument({
     setBusy(true);
     setError(null);
     try {
-      const fileData = await fileToBase64(file);
-      const parsed = await parseOnServer(
-        file,
-        fileData,
-        threadId,
-        documentType,
-      );
+      const { policy_summary } = await summarizeOnServer(file);
       await respond({
         uploaded: true,
         filename: file.name,
-        fileType: file.type || "application/octet-stream",
-        fileData,
-        extractedText: parsed.extracted_text,
+        fileType: file.type || "application/pdf",
+        policySummary: policy_summary,
       });
       setOutcome("uploaded");
       setOutcomeName(file.name);
@@ -198,9 +172,9 @@ export function UploadPolicyDocument({
       >
         <FileUp className="mb-2 h-8 w-8 text-blue-500" />
         <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-          Drag & drop or click to choose a file
+          Drag & drop or click to choose a PDF
         </p>
-        <p className="mt-1 text-xs text-gray-500">PDF recommended · max 10 MB</p>
+        <p className="mt-1 text-xs text-gray-500">PDF only · max 10 MB · OCR summarized</p>
         <input
           ref={inputRef}
           type="file"
@@ -252,7 +226,7 @@ export function UploadPolicyDocument({
           )}
         >
           <Upload className="h-4 w-4" />
-          {busy ? "Uploading…" : "Upload"}
+          {busy ? "Processing…" : "Upload"}
         </button>
         <button
           type="button"

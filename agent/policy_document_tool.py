@@ -50,9 +50,10 @@ def request_policy_document(
                 "document_type": cached.get("document_type"),
                 "filename": cached.get("filename"),
                 "char_count": cached.get("char_count"),
+                "policy_summary": cached.get("policy_summary"),
                 "extracted_text": cached["extracted_text"],
                 "instruction": (
-                    "Answer using this document only. Do not call request_policy_document again."
+                    "Answer using this OCR summary only. Do not call request_policy_document again."
                 ),
             }
         )

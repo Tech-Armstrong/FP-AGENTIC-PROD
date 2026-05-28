@@ -35,7 +35,6 @@ from pydantic import BaseModel, Field
 from tavily import TavilyClient
 
 from policy_document_tool import finalize_client_upload, request_policy_document
-from policy_documents import extract_text_from_upload
 
 # Unbuffered stdout/stderr (python -u equivalent)
 os.environ.setdefault("PYTHONUNBUFFERED", "1")
@@ -73,9 +72,9 @@ allocation, or wants a policy/ULIP reviewed:
    `request_policy_document` with the correct document_type and a short reason.
    Do NOT guess policy terms, coverage amounts, charges, or fund values.
 
-2. After `request_policy_document` returns with extracted_text (or already_uploaded),
-   answer ONLY using that text for policy-specific facts. If the answer is not in the
-   document, say clearly that it is not stated in the uploaded document.
+2. After `request_policy_document` returns with policy_summary (or already_uploaded),
+   answer ONLY using that OCR summary for policy-specific facts. If the answer is not in the
+   summary, say clearly that it is not stated in the uploaded document.
 
 3. If the user skipped upload, give general educational information and state you do
    not have their actual policy document.
@@ -371,43 +370,56 @@ def health():
 class ParsePolicyDocumentBody(BaseModel):
     filename: str | None = None
     fileType: str | None = None
-    fileData: str = Field(..., description="Base64-encoded file bytes")
+    fileData: str | None = Field(None, description="Deprecated — raw PDF not accepted")
+    policy_summary: dict | None = None
     thread_id: str | None = None
     document_type: str = "insurance_policy"
 
 
 @app.post("/parse-policy-document")
 def parse_policy_document_endpoint(body: ParsePolicyDocumentBody):
-    """Extract text from an uploaded policy PDF (used by chat upload UI)."""
-    try:
-        text = extract_text_from_upload(
-            file_data=body.fileData,
-            file_type=body.fileType,
-            filename=body.filename,
+    """Finalize OCR policy summary for chat (legacy agent-side entry)."""
+    if body.fileData and not body.policy_summary:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "detail": (
+                    "Raw PDF parsing is disabled. Upload via the chat UI so the "
+                    "OCR microservice can summarize the document first."
+                ),
+            },
         )
+
+    if body.policy_summary:
+        summary = body.policy_summary
+    else:
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "Missing policy_summary from OCR service"},
+        )
+
+    try:
         tid = (body.thread_id or "default").strip() or "default"
         doc_type = body.document_type or "insurance_policy"
+        context_text = json.dumps(summary, ensure_ascii=False, separators=(",", ":"))
         tool_result = finalize_client_upload(
             {
                 "uploaded": True,
                 "filename": body.filename,
-                "fileType": body.fileType,
-                "fileData": body.fileData,
-                "extractedText": text,
+                "fileType": body.fileType or "application/pdf",
+                "policySummary": summary,
             },
             thread_id=tid,
             document_type=doc_type,
         )
         return {
-            "extracted_text": text,
-            "char_count": len(text),
+            "policy_summary": summary,
+            "char_count": len(context_text),
             "thread_id": tid,
             "tool_result": json.loads(tool_result),
         }
     except ValueError as exc:
         return JSONResponse(status_code=400, content={"detail": str(exc)})
-    except RuntimeError as exc:
-        return JSONResponse(status_code=503, content={"detail": str(exc)})
 
 
 if __name__ == "__main__":

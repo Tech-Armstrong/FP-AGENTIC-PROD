@@ -1,20 +1,21 @@
 """
 Insurance / ULIP policy document upload handling for the chat agent.
+
+Chat uploads are OCR-summarized via OCR_SERVICE_URL; raw PDF bytes are never
+fed into the LLM context.
 """
 
 from __future__ import annotations
 
 import base64
 import binascii
-import io
 import json
-import re
 from typing import Any, Literal
 
 DocumentType = Literal["insurance_policy", "ulip"]
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
-MAX_EXTRACTED_CHARS = 80_000
+MAX_SUMMARY_CHARS = 80_000
 
 _policy_cache: dict[str, dict[str, Any]] = {}
 
@@ -55,7 +56,12 @@ def extract_text_from_upload(
     filename: str | None = None,
     raw_bytes: bytes | None = None,
 ) -> str:
-    """Extract plain text from an uploaded policy file (PDF primary)."""
+    """
+    Legacy inline PDF text extraction (pypdf).
+
+    Not used on the chat upload path — chat uses OCR summary JSON only.
+    Kept for unit tests of low-level parsing helpers.
+    """
     data = raw_bytes
     if data is None:
         if not file_data:
@@ -69,6 +75,8 @@ def extract_text_from_upload(
 
     if ext == "pdf" or "pdf" in mime:
         try:
+            import io
+
             from pypdf import PdfReader
         except ImportError as exc:
             raise RuntimeError(
@@ -83,15 +91,37 @@ def extract_text_from_upload(
         text = "\n\n".join(parts).strip()
         if not text:
             raise ValueError("Could not extract text from PDF (scanned image PDFs are not supported)")
-        return text[:MAX_EXTRACTED_CHARS]
+        return text[:MAX_SUMMARY_CHARS]
 
     if ext in ("png", "jpg", "jpeg", "webp") or "image" in mime:
         raise ValueError(
-            "Image uploads are accepted in the UI but OCR is not implemented. "
-            "Please upload a text-based PDF."
+            "Image uploads are not supported for policy chat upload. "
+            "Please upload a PDF."
         )
 
     raise ValueError("Unsupported file type. Upload a PDF policy document.")
+
+
+def _coerce_policy_summary(payload: dict[str, Any]) -> dict[str, Any] | None:
+    raw = payload.get("policySummary")
+    if raw is None:
+        raw = payload.get("policy_summary")
+    if raw is None:
+        return None
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+        return parsed if isinstance(parsed, dict) else None
+    return None
+
+
+def _compact_summary_text(summary: dict[str, Any]) -> str:
+    """Single-line compact JSON for LLM context."""
+    return json.dumps(summary, ensure_ascii=False, separators=(",", ":"))[:MAX_SUMMARY_CHARS]
 
 
 def process_upload_response(
@@ -101,7 +131,7 @@ def process_upload_response(
     document_type: str,
 ) -> str:
     """
-    Turn interrupt / frontend respond payload into a tool result string and cache text.
+    Turn interrupt / frontend respond payload into a tool result string and cache summary.
     """
     if isinstance(raw_response, str):
         try:
@@ -126,38 +156,38 @@ def process_upload_response(
             }
         )
 
-    extracted = payload.get("extractedText") or payload.get("extracted_text")
-    if not extracted and payload.get("fileData"):
-        try:
-            extracted = extract_text_from_upload(
-                file_data=payload.get("fileData"),
-                file_type=payload.get("fileType"),
-                filename=payload.get("filename"),
-            )
-        except (ValueError, RuntimeError) as exc:
-            return json.dumps(
-                {
-                    "status": "error",
-                    "document_type": document_type,
-                    "error": str(exc),
-                }
-            )
-
-    if not extracted or not str(extracted).strip():
+    if payload.get("fileData"):
         return json.dumps(
             {
                 "status": "error",
                 "document_type": document_type,
-                "error": "Upload succeeded but no text could be extracted.",
+                "error": (
+                    "Raw PDF data is not accepted in chat. The document must be "
+                    "summarized by the OCR service first."
+                ),
             }
         )
 
-    text = str(extracted).strip()[:MAX_EXTRACTED_CHARS]
+    summary = _coerce_policy_summary(payload)
+    if not summary:
+        return json.dumps(
+            {
+                "status": "error",
+                "document_type": document_type,
+                "error": (
+                    "Upload succeeded but no OCR policy summary was provided. "
+                    "Please retry the upload."
+                ),
+            }
+        )
+
+    context_text = _compact_summary_text(summary)
     cache_entry = {
         "document_type": document_type,
         "filename": payload.get("filename"),
-        "extracted_text": text,
-        "char_count": len(text),
+        "policy_summary": summary,
+        "extracted_text": context_text,
+        "char_count": len(context_text),
     }
     set_cached_policy(thread_id, cache_entry)
 
@@ -166,11 +196,15 @@ def process_upload_response(
             "status": "uploaded",
             "document_type": document_type,
             "filename": payload.get("filename"),
-            "char_count": len(text),
-            "extracted_text": text,
+            "char_count": len(context_text),
+            "policy_summary": summary,
+            "extracted_text": context_text,
             "instruction": (
-                "Use ONLY extracted_text for policy-specific facts (coverage, charges, "
-                "fund names, surrender values, etc.). If a detail is not in the text, say so."
+                "The user uploaded a policy document. Here is its extracted summary "
+                "(answer strictly from this; if a detail is not present, say so). "
+                "Use ONLY policy_summary / extracted_text for policy-specific facts "
+                "(coverage, charges, fund names, surrender values, etc.). "
+                "Never invent fields not in the summary."
             ),
         }
     )
@@ -184,5 +218,5 @@ def cached_policy_tool_hint(thread_id: str) -> str | None:
     return (
         f"A {cached.get('document_type', 'policy')} document is already on file for this "
         f"thread ({cached.get('filename', 'uploaded file')}, {cached.get('char_count', 0)} chars). "
-        f"Do NOT call request_policy_document again. Excerpt:\n{preview}"
+        f"Do NOT call request_policy_document again. OCR summary excerpt:\n{preview}"
     )

@@ -19,9 +19,11 @@ npm run dev:all
 
 Or: `.\scripts\start-dev.ps1` (add `-SkipInstall` to skip `pip`/`npm` on restarts). On macOS/Linux: `chmod +x scripts/start-dev.sh && ./scripts/start-dev.sh`.
 
-This creates `.venv`, installs Python and npm deps if needed, and starts the agent (:8000), Airtable API (:8001), and Next.js (:3000). Press Enter in the launcher window (Windows) or Ctrl+C (bash) to stop.
+This creates `.venv`, installs Python and npm deps if needed, and starts the OCR policy service (:8010), LangGraph agent (:8000), Airtable API (:8001), and Next.js (:3000). Press Enter in the launcher window (Windows) or Ctrl+C (bash) to stop.
 
-**Manual (three terminals):**
+Set `OCR_SERVICE_URL=http://localhost:8010` in `.env` for chat policy uploads. Copy `ocr-service/.env.example` to `ocr-service/.env` and add Azure Document Intelligence / LLM keys for real PDF summarization.
+
+**Manual (four terminals):**
 
 1. Copy env and configure keys (see `.env.example` — Azure for the agent, Tavily, Airtable for the dashboard):
 
@@ -29,7 +31,17 @@ This creates `.venv`, installs Python and npm deps if needed, and starts the age
    cp .env.example .env
    ```
 
-2. **Terminal 1 — LangGraph agent (port 8000):**
+2. **Terminal 1 — OCR policy service (port 8010):**
+
+   ```bash
+   pip install -r ocr-service/requirements.txt
+   cd ocr-service
+   python main.py
+   ```
+
+   Health check: `curl http://localhost:8010/health` → `{"status":"ok"}`
+
+3. **Terminal 2 — LangGraph agent (port 8000):**
 
    ```bash
    cd agent
@@ -39,7 +51,7 @@ This creates `.venv`, installs Python and npm deps if needed, and starts the age
 
    Health check: `curl http://localhost:8000/copilotkit/health` → `{"status":"ok","agent":{"name":"dashboard_agent"}}`
 
-3. **Terminal 2 — Airtable API (port 8001):**
+4. **Terminal 3 — Airtable API (port 8001):**
 
    Use a **virtualenv** and install **all** backend deps (includes **langgraph** for **Make plan**):
 
@@ -57,7 +69,7 @@ This creates `.venv`, installs Python and npm deps if needed, and starts the age
 
    Health check: `curl http://localhost:8001/health` → `{"status":"ok"}`
 
-4. **Terminal 3 — Next.js (port 3000):**
+5. **Terminal 4 — Next.js (port 3000):**
 
    ```bash
    npm install

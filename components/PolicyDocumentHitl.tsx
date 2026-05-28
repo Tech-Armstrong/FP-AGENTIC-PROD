@@ -7,7 +7,7 @@
  * @copilotkit/react-core v1). Tool name must match Python @tool("request_policy_document").
  *
  * Respond payload contract (JSON):
- *   { uploaded: true, filename, fileType, fileData, extractedText? }
+ *   { uploaded: true, filename, fileType, policySummary }
  *   { uploaded: false }
  */
 
@@ -27,6 +27,7 @@ export type PolicyDocumentReadable = {
   document_type?: string;
   filename?: string;
   char_count?: number;
+  policy_summary?: Record<string, unknown>;
   excerpt?: string;
 };
 
@@ -49,12 +50,14 @@ export function PolicyDocumentHitl() {
   });
 
   const onUploadComplete = useCallback((payload: PolicyUploadRespondPayload) => {
-    if (payload.uploaded && "extractedText" in payload && payload.extractedText) {
-      const text = payload.extractedText;
+    if (payload.uploaded && "policySummary" in payload && payload.policySummary) {
+      const summary = payload.policySummary;
+      const text = JSON.stringify(summary);
       setReadable({
         generated: true,
         filename: payload.filename,
         char_count: text.length,
+        policy_summary: summary,
         excerpt: text.slice(0, 2000),
       });
     } else {

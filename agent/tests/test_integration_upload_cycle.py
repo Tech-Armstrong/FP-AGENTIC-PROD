@@ -11,6 +11,12 @@ import json
 from policy_document_tool import finalize_client_upload, request_policy_document
 from policy_documents import get_cached_policy
 
+SUMMARY = {
+    "insurer": "Integration Life",
+    "coverage": "INR 10,00,000",
+    "annual_premium": "INR 25,000",
+}
+
 
 def test_full_upload_resume_cycle():
     thread = "integration-thread"
@@ -18,8 +24,7 @@ def test_full_upload_resume_cycle():
         "uploaded": True,
         "filename": "plan.pdf",
         "fileType": "application/pdf",
-        "fileData": "dGVzdA==",
-        "extractedText": "Coverage limit: INR 10,00,000. Annual premium: INR 25,000.",
+        "policySummary": SUMMARY,
     }
     tool_json = finalize_client_upload(
         respond_payload,
@@ -28,9 +33,10 @@ def test_full_upload_resume_cycle():
     )
     parsed = json.loads(tool_json)
     assert parsed["status"] == "uploaded"
-    assert "Coverage limit" in parsed["extracted_text"]
+    assert parsed["policy_summary"] == SUMMARY
+    assert "Integration Life" in parsed["extracted_text"]
+    assert "fileData" not in respond_payload
 
-    # Follow-up in same thread: tool must not ask for upload again
     again = json.loads(
         request_policy_document.invoke(
             {"document_type": "insurance_policy", "reason": "again"},
@@ -39,4 +45,4 @@ def test_full_upload_resume_cycle():
     )
     assert again["status"] == "already_uploaded"
     assert again["extracted_text"] == parsed["extracted_text"]
-    assert get_cached_policy(thread)["extracted_text"] == parsed["extracted_text"]
+    assert get_cached_policy(thread)["policy_summary"] == SUMMARY
