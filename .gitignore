@@ -26,6 +26,9 @@ __pycache__/
 .DS_Store
 *.pem
 
+# policy documents (customer PII — never commit)
+*.pdf
+
 # debug
 npm-debug.log*
 yarn-debug.log*
