@@ -19,6 +19,8 @@ const withPgPrePlan: EducationChildBlock = {
     destination: "Domestic",
     duration: 5,
     targetYear: UG_START + 5,
+    startYear: UG_START,
+    endYear: UG_START + 5,
     currentCost: null,
     futureCost: null,
     corpusGap: null,
@@ -28,7 +30,9 @@ const withPgPrePlan: EducationChildBlock = {
     stream: "MD",
     destination: "Domestic",
     duration: 3,
-    targetYear: UG_START + 8,
+    targetYear: UG_START + 5,
+    startYear: UG_START + 5,
+    endYear: UG_START + 8,
     currentCost: null,
     futureCost: null,
     corpusGap: null,
@@ -45,6 +49,8 @@ const naOnly: EducationChildBlock = {
     destination: "Domestic",
     duration: 4,
     targetYear: 2012 + 18 + 4,
+    startYear: 2012 + 18,
+    endYear: 2012 + 18 + 4,
     currentCost: null,
     futureCost: null,
     corpusGap: null,
@@ -53,8 +59,14 @@ const naOnly: EducationChildBlock = {
   pg: null,
 };
 
-const EXPECTED_HEADERS = ["Stream", "Course Duration", "Target Year", "Target Amount"];
-const REMOVED_HEADERS = ["Current Cost", "Future Cost", "Funding Status", "Particulars"];
+const EXPECTED_HEADERS = [
+  "Stream",
+  "Course Duration",
+  "Start Year",
+  "End Year",
+  "Target Amount",
+];
+const REMOVED_HEADERS = ["Current Cost", "Future Cost", "Funding Status", "Particulars", "Target Year"];
 
 function tableCellCounts(table: HTMLTableElement) {
   const headers = within(table).getAllByRole("columnheader");
@@ -63,37 +75,39 @@ function tableCellCounts(table: HTMLTableElement) {
 }
 
 describe("EducationPlanningSection", () => {
-  it("UG table has 4 horizontal columns and no removed columns", () => {
+  it("UG table has 5 columns and no removed columns", () => {
     render(
       <EducationPlanningSection blocks={[withPgPrePlan]} targets={{}} onTargetChange={noop} />,
     );
     const ugSection = document.querySelector(".ug-section")!;
     const table = ugSection.querySelector("table") as HTMLTableElement;
     const { headers, cells } = tableCellCounts(table);
-    expect(headers).toBe(4);
-    expect(cells).toBe(4);
+    expect(headers).toBe(5);
+    expect(cells).toBe(5);
     for (const h of EXPECTED_HEADERS) {
       expect(within(table).getByRole("columnheader", { name: h })).toBeInTheDocument();
     }
     for (const h of REMOVED_HEADERS) {
       expect(within(table).queryByRole("columnheader", { name: h })).not.toBeInTheDocument();
     }
-    expect(screen.getByText("5 yrs")).toBeInTheDocument();
-    expect(screen.getByText(String(UG_START + 5))).toBeInTheDocument();
+    expect(within(table).getByText("5 yrs")).toBeInTheDocument();
+    expect(within(table).getByText(String(UG_START))).toBeInTheDocument();
+    expect(within(table).getByText(String(UG_START + 5))).toBeInTheDocument();
   });
 
-  it("child with PG: PG table has same 4 columns", () => {
+  it("child with PG: PG table shows start and end years", () => {
     render(
       <EducationPlanningSection blocks={[withPgPrePlan]} targets={{}} onTargetChange={noop} />,
     );
     const pgSection = document.querySelector(".pg-section")!;
     const table = pgSection.querySelector("table") as HTMLTableElement;
     const { headers, cells } = tableCellCounts(table);
-    expect(headers).toBe(4);
-    expect(cells).toBe(4);
+    expect(headers).toBe(5);
+    expect(cells).toBe(5);
     expect(within(table).getByRole("columnheader", { name: "Target Amount" })).toBeInTheDocument();
-    expect(screen.getByText("3 yrs")).toBeInTheDocument();
-    expect(screen.getByText(String(UG_START + 8))).toBeInTheDocument();
+    expect(within(table).getByText("3 yrs")).toBeInTheDocument();
+    expect(within(table).getByText(String(UG_START + 5))).toBeInTheDocument();
+    expect(within(table).getByText(String(UG_START + 8))).toBeInTheDocument();
   });
 
   it("NA child: PG table absent, note present", () => {
@@ -147,6 +161,8 @@ describe("EducationPlanningSection", () => {
         destination: "Domestic",
         duration: 6,
         targetYear: 2015 + 18 + 6,
+        startYear: 2015 + 18,
+        endYear: 2015 + 18 + 6,
         currentCost: null,
         futureCost: null,
         corpusGap: null,

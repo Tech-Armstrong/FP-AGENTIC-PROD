@@ -7,6 +7,8 @@ structured client data for the Next.js dashboard.
 
 import os
 import sys
+import logging
+from copy import deepcopy
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -32,6 +34,8 @@ from rsu_market import (  # noqa: E402
     get_rsu_market_payload,
     refresh_rsu_market_payload,
 )
+
+logger = logging.getLogger(__name__)
 from financial_plan_runner import (  # noqa: E402
     FinancialPlanDependencyError,
     run_financial_plan_for_client,
@@ -95,6 +99,18 @@ class EducationTarget(BaseModel):
 class FinancialPlanRequest(BaseModel):
     record_id: str
     education_targets: list[EducationTarget] | None = None
+    overrides: "PlanOverrides | None" = None
+
+
+class PlanOverrides(BaseModel):
+    epf_rate: float | None = None
+    ppf_rate: float | None = None
+    nps_rate: float | None = None
+    mf_expected_return: float | None = None
+
+
+# Backward-compatible alias
+RetirementRateOverrides = PlanOverrides
 
 
 @app.exception_handler(Exception)
@@ -597,6 +613,50 @@ def airtable_record_to_client_data(fields: dict) -> dict:
     }
 
 
+def _normalize_rate(val: float) -> float:
+    """Match airtable_record_to_client_data _rate(): values > 1 treated as percentages."""
+    if val > 1:
+        return round(val / 100, 6)
+    return val
+
+
+def apply_plan_overrides(
+    client_payload: dict,
+    overrides: PlanOverrides | None,
+) -> dict:
+    # Overrides are request-scoped only; Airtable is never mutated.
+    if overrides is None:
+        return client_payload
+    payload = deepcopy(client_payload)
+    retirement = (
+        payload.get("investment_details", {}).get("retirement_investments") or {}
+    )
+    if overrides.epf_rate is not None:
+        rate = _normalize_rate(overrides.epf_rate)
+        for item in retirement.get("epf") or []:
+            item["interest_rate"] = rate
+    if overrides.ppf_rate is not None:
+        rate = _normalize_rate(overrides.ppf_rate)
+        for item in retirement.get("ppf") or []:
+            item["interest_rate"] = rate
+    if overrides.nps_rate is not None:
+        rate = _normalize_rate(overrides.nps_rate)
+        for item in retirement.get("nps") or []:
+            item["expected_corpus_growth_rate"] = rate
+    if overrides.mf_expected_return is not None:
+        rate = _normalize_rate(overrides.mf_expected_return)
+        for item in (payload.get("investment_details") or {}).get("mutual_funds") or []:
+            item["expected_annual_return"] = rate
+    return payload
+
+
+def apply_retirement_rate_overrides(
+    client_payload: dict,
+    overrides: PlanOverrides | None,
+) -> dict:
+    return apply_plan_overrides(client_payload, overrides)
+
+
 # ── Routes ───────────────────────────────────────────────────────────────────
 
 @app.get("/health")
@@ -622,7 +682,8 @@ def get_client_data(record_id: str):
     if resp.status_code != 200:
         raise HTTPException(status_code=502, detail=f"Airtable error: {resp.text}")
     fields = resp.json().get("fields", {})
-    return {"record_id": record_id, "client_data": airtable_record_to_client_data(fields)}
+    client_payload = airtable_record_to_client_data(fields)
+    return {"record_id": record_id, "client_data": client_payload}
 
 
 @app.get("/rsu-market-data")
@@ -686,6 +747,7 @@ def run_financial_plan(req: FinancialPlanRequest):
     """
     Run the integrated LangGraph financial planning workflow (Armstrong Financial_Planning)
     for the given Airtable record. Requires Azure OpenAI + Tavily in .env for LLM nodes.
+    Optional overrides adjust retirement scheme rates on the mapped payload only.
     """
     import traceback
 
@@ -706,6 +768,7 @@ def run_financial_plan(req: FinancialPlanRequest):
                 row["user_target_corpus_graduation"] = float(t.ug_target_amount)
             if t.pg_target_amount is not None:
                 row["user_target_corpus_post_graduation"] = float(t.pg_target_amount)
+    client_payload = apply_plan_overrides(client_payload, req.overrides)
     try:
         return run_financial_plan_for_client(client_payload)
     except FinancialPlanDependencyError as exc:

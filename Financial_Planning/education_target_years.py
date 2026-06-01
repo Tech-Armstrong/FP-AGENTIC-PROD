@@ -47,25 +47,31 @@ def _is_empty_duration(value: Any) -> bool:
     return False
 
 
+def _positive_airtable_duration(value: Any) -> int | None:
+    """Non-null positive integer from Airtable; None when missing/zero/invalid."""
+    if _is_empty_duration(value):
+        return None
+    parsed = parse_duration(value, 0)
+    return parsed if parsed > 0 else None
+
+
 def resolve_duration(
     course_value: Any,
     airtable_other_duration: Any,
     default: int = DEFAULT_UG_DURATION,
 ) -> int:
-    """Known stream -> hardcoded years; 'Other' -> Airtable duration field; NA -> 0."""
+    """Airtable duration (if positive) overrides map; else stream map; 'Other' -> field or default."""
     key = normalize_course(course_value)
     if key == "NA":
         return 0
+    override = _positive_airtable_duration(airtable_other_duration)
+    if override is not None:
+        return override
     if key in COURSE_DURATION:
         return COURSE_DURATION[key]
     if key == "OTHER":
-        if _is_empty_duration(airtable_other_duration):
-            print(f"[edu] WARN Other course missing duration, using default {default}")
-            return default
-        parsed = parse_duration(airtable_other_duration, default)
-        if parsed == default and _is_empty_duration(airtable_other_duration):
-            print(f"[edu] WARN Other course missing duration, using default {default}")
-        return parsed
+        print(f"[edu] WARN Other course missing duration, using default {default}")
+        return default
     print(f"[edu] WARN unknown course '{course_value}', using default {default}")
     return default
 
@@ -95,24 +101,37 @@ def compute_education_target_years(
     ug_start_year = ug_start_year_from_dob(dob)
     ug_stream = child.get("graduation_stream")
     ug_duration = resolve_duration(ug_stream, _ug_other_duration(child), DEFAULT_UG_DURATION)
+    # ug_target_year drives workflow inflation (years_to_goal); equals program end year.
     ug_target_year = ug_start_year + ug_duration
+    ug_end_year = ug_target_year
 
     pg_stream_raw = child.get("post_graduation_stream")
     pg_duration = resolve_duration(pg_stream_raw, _pg_other_duration(child), DEFAULT_UG_DURATION)
 
     pg_target_year: int | None = None
+    pg_program_end_year: int | None = None
+    pg_start_year: int | None = None
+    pg_end_year: int | None = None
     if pg_duration > 0 and normalize_course(pg_stream_raw) != "NA":
         dest = str(child.get("post_graduation_destination") or "").strip().upper()
         if dest not in ("", "NA", "NONE"):
-            pg_target_year = ug_target_year + pg_duration
+            # pg_target_year = funding year = PG start (= UG end); not PG program completion.
+            pg_target_year = ug_target_year
+            pg_start_year = pg_target_year
+            pg_end_year = ug_target_year + pg_duration
+            pg_program_end_year = pg_end_year
 
     return {
         "ug_duration": ug_duration,
         "ug_start_year": ug_start_year,
+        "ug_end_year": ug_end_year,
         "ug_target_year": ug_target_year,
         "pg_stream": pg_stream_raw,
         "pg_duration": pg_duration if pg_target_year is not None else 0,
+        "pg_start_year": pg_start_year,
+        "pg_end_year": pg_end_year,
         "pg_target_year": pg_target_year,
+        "pg_program_end_year": pg_program_end_year,
     }
 
 

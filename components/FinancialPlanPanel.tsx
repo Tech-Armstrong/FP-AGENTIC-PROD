@@ -34,12 +34,15 @@ type GoalAlloc = {
   corpus_gap?: number;
   target_corpus?: number;
   target_year?: number;
+  /** Education goals only — program start/end for plan card display. */
+  start_year?: number | null;
+  end_year?: number | null;
   filter?: { type?: string }[];
   notes?: string[];
   funded_from_preview?: FundedFromRow[];
 };
 
-type PlanSummary = {
+export type PlanSummary = {
   client_name?: string;
   monthly_surplus?: number | null;
   risk_appetite?: { risk_appetite?: string; reason?: string } | Record<string, unknown>;
@@ -66,19 +69,65 @@ type PlanSummary = {
     breakdown?: Record<string, number>;
     note?: string;
   } | null;
-  wealth_at_retirement_preview?: {
-    retirement_year?: number | null;
-    total_corpus?: number | null;
-    rows?: {
-      key?: string;
-      label?: string;
-      future_value?: number | null;
-      rate?: string;
-    }[];
-  } | null;
+  spouse_preview?: Record<string, unknown> | null;
+  marriage_goals_preview?: Record<string, unknown>[] | null;
+  education_targets_preview?: Record<string, unknown>[] | null;
+  education_planning_preview?: Record<string, unknown>[] | null;
+  real_estate_preview?: Record<string, unknown>[] | null;
 };
 
-type PlanResponse = { ok?: boolean; summary?: PlanSummary; detail?: string };
+export type PlanResponse = { ok?: boolean; summary?: PlanSummary; detail?: string };
+
+export type PlanOverrides = {
+  epf_rate?: number;
+  ppf_rate?: number;
+  nps_rate?: number;
+  mf_expected_return?: number;
+};
+
+/** @deprecated Use PlanOverrides — kept for existing imports */
+export type RetirementRateOverrides = PlanOverrides;
+
+/** Decimal values actually used for a plan run (POST overrides merged with originals). */
+export type AppliedRates = {
+  epf: number | null;
+  ppf: number | null;
+  nps: number | null;
+  mfExpectedReturn: number | null;
+};
+
+export function emptyAppliedRates(): AppliedRates {
+  return {
+    epf: null,
+    ppf: null,
+    nps: null,
+    mfExpectedReturn: null,
+  };
+}
+
+export function resolveAppliedRates(
+  original: AppliedRates,
+  overrides: PlanOverrides | null,
+): AppliedRates {
+  if (!overrides) {
+    return { ...original };
+  }
+  return {
+    epf: overrides.epf_rate ?? original.epf,
+    ppf: overrides.ppf_rate ?? original.ppf,
+    nps: overrides.nps_rate ?? original.nps,
+    mfExpectedReturn: overrides.mf_expected_return ?? original.mfExpectedReturn,
+  };
+}
+
+export type PlanTab = {
+  id: string;
+  label: string;
+  overrides: PlanOverrides | null;
+  /** Values sent to the workflow for this tab (frozen at run kickoff). */
+  appliedRates: AppliedRates;
+  summary: PlanSummary;
+};
 
 const STEPS = [
   "Loading client data",
@@ -444,21 +493,34 @@ function PlanGeneratingOverlay({ activeStep }: { activeStep: number }) {
 export function FinancialPlanPanel({
   recordId,
   disabled,
-  onPlanResult,
+  planOverrides,
+  originalRates,
+  planTabs,
+  activeTabId,
+  onActiveTabChange,
+  onPlanComplete,
   educationBlocks,
   educationTargets,
 }: {
   recordId: string | null;
   disabled?: boolean;
-  /** Notifies parent when plan completes — used for CopilotKit context. */
-  onPlanResult?: (result: PlanResponse | null) => void;
+  planOverrides?: PlanOverrides | null;
+  originalRates: AppliedRates;
+  planTabs: PlanTab[];
+  activeTabId: string | null;
+  onActiveTabChange: (id: string) => void;
+  onPlanComplete: (payload: {
+    overrides: PlanOverrides | null;
+    appliedRates: AppliedRates;
+    summary: PlanSummary;
+    label?: string;
+  }) => void;
   educationBlocks?: EducationChildBlock[];
   educationTargets?: Record<string, { ug?: string; pg?: string }>;
 }) {
   const [loading, setLoading] = React.useState(false);
   const [showWarning, setShowWarning] = React.useState(false);
   const [overlayStep, setOverlayStep] = React.useState(0);
-  const [result, setResult] = React.useState<PlanResponse | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [status, setStatus] = React.useState<{
     msg: string;
@@ -466,11 +528,9 @@ export function FinancialPlanPanel({
   } | null>(null);
 
   React.useEffect(() => {
-    setResult(null);
     setError(null);
     setStatus(null);
-    onPlanResult?.(null);
-  }, [recordId, onPlanResult]);
+  }, [recordId]);
 
   React.useEffect(() => {
     if (!loading) {
@@ -499,38 +559,98 @@ export function FinancialPlanPanel({
     return Number.isFinite(n) && n > 0 ? n : null;
   };
 
-  const runPlan = async (
-    educationTargetsPayload?: Array<{
-      name_of_kid: string;
-      ug_target_amount?: number | null;
-      pg_target_amount?: number | null;
-    }>,
-  ) => {
+  type EducationTargetPayload = {
+    name_of_kid: string;
+    ug_target_amount?: number | null;
+    pg_target_amount?: number | null;
+  };
+
+  const postPlanRun = async (
+    overrides?: PlanOverrides | null,
+    educationTargetsPayload?: EducationTargetPayload[],
+  ): Promise<PlanResponse> => {
+    const payload: {
+      record_id: string;
+      overrides?: PlanOverrides;
+      education_targets?: EducationTargetPayload[];
+    } = {
+      record_id: recordId!,
+    };
+    if (overrides && Object.keys(overrides).length > 0) {
+      payload.overrides = overrides;
+    }
+    if (educationTargetsPayload?.length) {
+      payload.education_targets = educationTargetsPayload;
+    }
+    const res = await fetch("/api/financial-plan/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = (await res.json()) as PlanResponse;
+    if (!res.ok) {
+      const msg =
+        typeof data.detail === "string" ? data.detail : "Plan run failed";
+      throw new Error(msg);
+    }
+    return data;
+  };
+
+  const runPlan = async (educationTargetsPayload?: EducationTargetPayload[]) => {
     if (!recordId) return;
     setLoading(true);
     setError(null);
-    setResult(null);
-    onPlanResult?.(null);
     setStatus({ msg: "Generating financial plan…", type: "info" });
     try {
-      const res = await fetch("/api/financial-plan/run", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          record_id: recordId,
-          ...(educationTargetsPayload ? { education_targets: educationTargetsPayload } : {}),
-        }),
-      });
-      const data = (await res.json()) as PlanResponse;
-      if (!res.ok) {
-        const msg =
-          typeof data.detail === "string" ? data.detail : "Plan run failed";
-        setError(msg);
-        setStatus({ msg, type: "error" });
-        return;
+      const isFirstRun = planTabs.length === 0;
+      const hasEdits = Boolean(
+        planOverrides && Object.keys(planOverrides).length > 0,
+      );
+
+      if (isFirstRun) {
+        // Intentional two-run on first edit: Original (Airtable) always runs first;
+        // if rates were edited, a second pass with overrides creates Plan 2 (~1–3 min extra).
+        setStatus({
+          msg: "Generating original plan (Airtable baseline)…",
+          type: "info",
+        });
+        const baseline = await postPlanRun(null, educationTargetsPayload);
+        if (baseline.summary) {
+          onPlanComplete({
+            overrides: null,
+            appliedRates: resolveAppliedRates(originalRates, null),
+            summary: baseline.summary,
+            label: "Original (Airtable)",
+          });
+        }
+
+        if (hasEdits && planOverrides) {
+          setStatus({
+            msg: "Generating edited scenario (Plan 2)…",
+            type: "info",
+          });
+          const edited = await postPlanRun(planOverrides, educationTargetsPayload);
+          if (edited.summary) {
+            onPlanComplete({
+              overrides: planOverrides,
+              appliedRates: resolveAppliedRates(originalRates, planOverrides),
+              summary: edited.summary,
+              label: "Plan 2",
+            });
+          }
+        }
+      } else {
+        const runOverrides = hasEdits && planOverrides ? planOverrides : null;
+        const data = await postPlanRun(runOverrides, educationTargetsPayload);
+        if (data.summary) {
+          onPlanComplete({
+            overrides: runOverrides,
+            appliedRates: resolveAppliedRates(originalRates, runOverrides),
+            summary: data.summary,
+          });
+        }
       }
-      setResult(data);
-      onPlanResult?.(data);
+
       setStatus({
         msg: "Plan ready — review below.",
         type: "success",
@@ -538,7 +658,6 @@ export function FinancialPlanPanel({
     } catch (e) {
       const msg = (e as Error).message;
       setError(msg);
-      onPlanResult?.(null);
       setStatus({ msg, type: "error" });
     } finally {
       setLoading(false);
@@ -566,7 +685,7 @@ export function FinancialPlanPanel({
     runPlan(education_targets.length ? education_targets : undefined);
   };
 
-  const s = result?.summary;
+  const s = planTabs.find((tab) => tab.id === activeTabId)?.summary;
   const sb = s?.spending_behavior;
   const savingPct =
     sb && typeof sb.saving_ratio === "number"
@@ -639,6 +758,26 @@ export function FinancialPlanPanel({
           {error && status?.type !== "error" ? (
             <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-800 dark:bg-red-950/40 dark:text-red-300">
               {error}
+            </div>
+          ) : null}
+
+          {planTabs.length > 0 ? (
+            <div className="mb-4 flex flex-wrap gap-2 border-b border-slate-200 pb-3 dark:border-slate-700">
+              {planTabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => onActiveTabChange(tab.id)}
+                  className={cn(
+                    "rounded-lg px-3 py-1.5 text-xs font-semibold transition",
+                    tab.id === activeTabId
+                      ? "bg-[#1a365d] text-white dark:bg-sky-700"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700",
+                  )}
+                >
+                  {tab.label}
+                </button>
+              ))}
             </div>
           ) : null}
 
@@ -958,10 +1097,26 @@ export function FinancialPlanPanel({
                             </span>
                           </div>
                           <div className="mb-2.5 text-[0.82rem] text-slate-500 dark:text-slate-400">
-                            Target year:{" "}
-                            <strong className="text-slate-800 dark:text-slate-200">
-                              {g.target_year ?? "—"}
-                            </strong>
+                            {g.start_year != null && g.end_year != null ? (
+                              <>
+                                Starts{" "}
+                                <strong className="text-slate-800 dark:text-slate-200">
+                                  {g.start_year}
+                                </strong>
+                                {" · "}
+                                Ends{" "}
+                                <strong className="text-slate-800 dark:text-slate-200">
+                                  {g.end_year}
+                                </strong>
+                              </>
+                            ) : (
+                              <>
+                                Target year:{" "}
+                                <strong className="text-slate-800 dark:text-slate-200">
+                                  {g.target_year ?? "—"}
+                                </strong>
+                              </>
+                            )}
                             {" · "}
                             Target corpus:{" "}
                             <strong className="text-slate-800 dark:text-slate-200">

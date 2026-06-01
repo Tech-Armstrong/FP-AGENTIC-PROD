@@ -72,15 +72,16 @@ def education_fees_calculation(state: ClientState):
             # print("default graduation for stream {education_plan['name_of_kid']} is Engineering, as no stream was selected")
         
         if education_plan['graduation_destination']=='Domestic' or education_plan['graduation_destination']=='International':
-            edu_type='undergraduation' 
+            edu_type='undergraduation'
 
-            graduation_details = _load_graduation_fees()
-            
-            for grad_info in graduation_details: 
-                if grad_info['graduation_destination']==education_plan['graduation_destination'] and grad_info['graduation_stream']==education_plan['graduation_stream']:
-                    education_plan['current_fees_of_graduation']=grad_info['current_fees_of_graduation']
-            if "current_fees_of_graduation" not in education_plan:
-                education_plan["current_fees_of_graduation"] = 1_000_000
+            if not education_plan.get('_ug_fee_overridden'):
+                graduation_details = _load_graduation_fees()
+
+                for grad_info in graduation_details:
+                    if grad_info['graduation_destination']==education_plan['graduation_destination'] and grad_info['graduation_stream']==education_plan['graduation_stream']:
+                        education_plan['current_fees_of_graduation']=grad_info['current_fees_of_graduation']
+                if "current_fees_of_graduation" not in education_plan:
+                    education_plan["current_fees_of_graduation"] = 1_000_000
         if education_plan['post_graduation_destination']=='Domestic' or education_plan['post_graduation_destination']=='International': 
 
             # if education_plan['post_graduation_destination']=='International' and (1+state['retirement_goal'][0]['corpus_needed'])*100/(state['required_retirement_corpus']['recommendation']['recommended_corpus']) > 20 :
@@ -97,15 +98,14 @@ def education_fees_calculation(state: ClientState):
 
             edu_type='postgraduation'
 
-            ####################################### import pickle
-            
-            post_graduation_details = _load_post_graduation_fees()
-            
-            for grad_info in post_graduation_details: 
-                if grad_info['post_graduation_destination']==education_plan['post_graduation_destination'] and grad_info['post_graduation_stream']==education_plan['post_graduation_stream']:
-                    education_plan['current_fees_of_post_graduation']=grad_info['current_fees_of_post_graduation']
-            if "current_fees_of_post_graduation" not in education_plan:
-                education_plan["current_fees_of_post_graduation"] = 1_200_000
+            if not education_plan.get('_pg_fee_overridden'):
+                post_graduation_details = _load_post_graduation_fees()
+
+                for grad_info in post_graduation_details:
+                    if grad_info['post_graduation_destination']==education_plan['post_graduation_destination'] and grad_info['post_graduation_stream']==education_plan['post_graduation_stream']:
+                        education_plan['current_fees_of_post_graduation']=grad_info['current_fees_of_post_graduation']
+                if "current_fees_of_post_graduation" not in education_plan:
+                    education_plan["current_fees_of_post_graduation"] = 1_200_000
     print(f"education_plan: {education_plan}\n")
     print("--------------------------"*6)
     return state

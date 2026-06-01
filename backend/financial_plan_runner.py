@@ -184,6 +184,30 @@ def _education_funding_status(goal: dict) -> str:
     return "not_funded"
 
 
+def _education_goal_start_end(
+    goal_name: str,
+    targets_by_child: dict,
+) -> tuple[int | None, int | None]:
+    """
+    Education goals are named '{child} UG ...' / '{child} PG ...' (see allocations_nodes).
+    Second token is UG/PG even when stream/destination suffix follows, e.g.
+    'Ishita UG (MBBS, Domestic)'.
+    """
+    parts = str(goal_name or "").split()
+    if len(parts) < 2 or parts[1] not in ("UG", "PG"):
+        return None, None
+    targets = targets_by_child.get(parts[0]) if isinstance(targets_by_child, dict) else None
+    if not isinstance(targets, dict):
+        return None, None
+    if parts[1] == "UG":
+        start = targets.get("ug_start_year")
+        end = targets.get("ug_end_year") or targets.get("ug_target_year")
+        return start, end
+    start = targets.get("pg_start_year") or targets.get("pg_target_year")
+    end = targets.get("pg_end_year") or targets.get("pg_program_end_year")
+    return start, end
+
+
 def _build_education_planning_preview(state: dict, client_payload: dict) -> list[dict]:
     """Per-child UG/PG costs and funding from education_planning_summary (post Make Plan)."""
     cd = client_payload if isinstance(client_payload, dict) else {}
@@ -255,10 +279,24 @@ def _build_education_targets_preview(state: dict, client_payload: dict) -> list[
                 "child_name": name,
                 "ug_duration": goal.get("ug_duration"),
                 "ug_start_year": goal.get("ug_start_year"),
+                "ug_end_year": goal.get("ug_start_year", 0) + goal.get("ug_duration", 0)
+                if goal.get("ug_start_year") is not None
+                else goal.get("target_year"),
                 "ug_target_year": goal.get("target_year"),
                 "pg_stream": goal.get("pg_stream"),
                 "pg_duration": goal.get("pg_duration"),
+                "pg_start_year": goal.get("pg_target_year"),
+                "pg_end_year": (
+                    goal.get("pg_target_year") + goal.get("pg_duration", 0)
+                    if goal.get("pg_target_year") is not None and goal.get("pg_duration")
+                    else None
+                ),
                 "pg_target_year": goal.get("pg_target_year"),
+                "pg_program_end_year": (
+                    goal.get("pg_target_year") + goal.get("pg_duration", 0)
+                    if goal.get("pg_target_year") is not None and goal.get("pg_duration")
+                    else None
+                ),
             }
         )
     return rows
@@ -419,6 +457,7 @@ def summarize_plan_state(state: dict) -> dict:
         return out
 
     if isinstance(oga_goals, list):
+        targets_by_child = cd.get("education_target_years_by_child") or {}
         for g in oga_goals[:20]:
             raw_note = g.get("note")
             if isinstance(raw_note, list):
@@ -467,18 +506,21 @@ def summarize_plan_state(state: dict) -> dict:
                         }
                     )
 
-            alloc_preview.append(
-                {
-                    "goal_name": g.get("goal_name"),
-                    "corpus_needed": g.get("corpus_needed"),
-                    "corpus_gap": g.get("corpus_gap"),
-                    "target_corpus": g.get("target_corpus"),
-                    "target_year": g.get("target_year"),
-                    "filter": g.get("filter"),
-                    "notes": notes_out,
-                    "funded_from_preview": funded_preview,
-                }
-            )
+            edu_start, edu_end = _education_goal_start_end(goal_name, targets_by_child)
+            row: dict = {
+                "goal_name": g.get("goal_name"),
+                "corpus_needed": g.get("corpus_needed"),
+                "corpus_gap": g.get("corpus_gap"),
+                "target_corpus": g.get("target_corpus"),
+                "target_year": g.get("target_year"),
+                "filter": g.get("filter"),
+                "notes": notes_out,
+                "funded_from_preview": funded_preview,
+            }
+            if edu_start is not None and edu_end is not None:
+                row["start_year"] = edu_start
+                row["end_year"] = edu_end
+            alloc_preview.append(row)
 
     def _last_num(val):
         if val is None:

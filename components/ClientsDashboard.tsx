@@ -1,11 +1,18 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTheme } from "next-themes";
 import { useCopilotAction, useCopilotReadable } from "@copilotkit/react-core";
 import { SearchResults } from "./generative-ui/SearchResults";
 import { CurrentDateTool } from "./generative-ui/CurrentDateTool";
-import { FinancialPlanPanel } from "./FinancialPlanPanel";
+import {
+  FinancialPlanPanel,
+  type AppliedRates,
+  type PlanTab,
+  type PlanSummary,
+  type PlanOverrides,
+  emptyAppliedRates,
+} from "./FinancialPlanPanel";
 import { DashboardSidebar } from "./DashboardSidebar";
 import { SpouseDetailsPanel, mergeSpouseData, type SpouseData } from "./SpouseDetailsPanel";
 import { RealEstateTable, type RealEstateProperty } from "./RealEstateTable";
@@ -49,7 +56,7 @@ interface ClientDetail {
       retirement_investments: {
         epf: { current_value: number; employee_employer_contribution_monthly: number; interest_rate: number }[];
         ppf: { current_value: number; annual_contribution: number; interest_rate: number }[];
-        nps: { current_value: number; monthly_contribution: number; maturity_year: string }[];
+        nps: { current_value: number; monthly_contribution: number; maturity_year: string; expected_corpus_growth_rate?: number }[];
         ulip: { current_value: number }[];
       };
       bonds: { bond_name: string; invested_amount: number; interest_rate: number; tenure_years: number }[];
@@ -71,6 +78,7 @@ interface ClientDetail {
       graduation_stream: string;
       graduation_destination: string;
       course_duration_ug?: number | null;
+      fund_allocated_for_graduation?: number;
       post_graduation_stream: string;
       post_graduation_destination: string;
       course_duration_pg?: number | null;
@@ -89,6 +97,163 @@ function inr(n: number | null | undefined): string {
 }
 
 function pct(r: number) { return r ? `${(r * 100).toFixed(2)}%` : "—"; }
+
+function formatRateDisplay(decimal: number): string {
+  const pct = decimal * 100;
+  const trimmed = pct.toFixed(2).replace(/\.?0+$/, "");
+  return `${trimmed}%`;
+}
+
+function decimalToPctInput(rate: number): string {
+  return (rate * 100).toFixed(2);
+}
+
+function parsePctInput(raw: string): number | null {
+  const cleaned = raw.replace(/[%\s]/g, "").trim();
+  if (!cleaned) return null;
+  const n = Number(cleaned);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+/** Normalize UI percentage to decimal (9 → 0.09), matching backend _normalize_rate. */
+function parseRateToDecimal(raw: string): number | null {
+  const n = parsePctInput(raw);
+  if (n === null) return null;
+  return n > 1 ? n / 100 : n;
+}
+
+function rateDecimalsMatch(a: number, b: number): boolean {
+  return Math.round(a * 10000) === Math.round(b * 10000);
+}
+
+function buildPlanChangeEntries(
+  original: AppliedRates,
+  applied: AppliedRates,
+): string[] {
+  const entries: string[] = [];
+  if (
+    original.epf != null &&
+    applied.epf != null &&
+    !rateDecimalsMatch(original.epf, applied.epf)
+  ) {
+    entries.push(
+      `EPF ${formatRateDisplay(original.epf)} → ${formatRateDisplay(applied.epf)}`,
+    );
+  }
+  if (
+    original.ppf != null &&
+    applied.ppf != null &&
+    !rateDecimalsMatch(original.ppf, applied.ppf)
+  ) {
+    entries.push(
+      `PPF ${formatRateDisplay(original.ppf)} → ${formatRateDisplay(applied.ppf)}`,
+    );
+  }
+  if (
+    original.nps != null &&
+    applied.nps != null &&
+    !rateDecimalsMatch(original.nps, applied.nps)
+  ) {
+    entries.push(
+      `NPS ${formatRateDisplay(original.nps)} → ${formatRateDisplay(applied.nps)}`,
+    );
+  }
+  if (
+    original.mfExpectedReturn != null &&
+    applied.mfExpectedReturn != null &&
+    !rateDecimalsMatch(original.mfExpectedReturn, applied.mfExpectedReturn)
+  ) {
+    entries.push(
+      `MF return ${formatRateDisplay(original.mfExpectedReturn)} → ${formatRateDisplay(applied.mfExpectedReturn)}`,
+    );
+  }
+  return entries;
+}
+
+function PlanChangeBanner({
+  original,
+  applied,
+}: {
+  original: AppliedRates;
+  applied: AppliedRates;
+}) {
+  const entries = buildPlanChangeEntries(original, applied);
+  if (entries.length === 0) return null;
+  return (
+    <div className="mb-2 flex flex-wrap items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 dark:border-amber-800/60 dark:bg-amber-950/30">
+      <span className="text-[10px] font-bold uppercase tracking-wide text-amber-800 dark:text-amber-300">
+        Plan inputs changed
+      </span>
+      {entries.map((entry) => (
+        <span
+          key={entry}
+          className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-950 dark:bg-amber-900/50 dark:text-amber-100"
+        >
+          {entry}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function syncEditableFromApplied(applied: AppliedRates): {
+  epf: string;
+  ppf: string;
+  nps: string;
+  mf: string;
+} {
+  return {
+    epf: applied.epf != null ? decimalToPctInput(applied.epf) : "",
+    ppf: applied.ppf != null ? decimalToPctInput(applied.ppf) : "",
+    nps: applied.nps != null ? decimalToPctInput(applied.nps) : "",
+    mf: applied.mfExpectedReturn != null ? decimalToPctInput(applied.mfExpectedReturn) : "",
+  };
+}
+
+function buildPlanOverridesForRun(
+  edited: {
+    epf: string;
+    ppf: string;
+    nps: string;
+    mf: string;
+  },
+  baselines: AppliedRates,
+): PlanOverrides | null {
+  const overrides: PlanOverrides = {};
+  const epf = parseRateToDecimal(edited.epf);
+  if (epf !== null && baselines.epf !== null && !rateDecimalsMatch(epf, baselines.epf)) {
+    overrides.epf_rate = epf;
+  }
+  const ppf = parseRateToDecimal(edited.ppf);
+  if (ppf !== null && baselines.ppf !== null && !rateDecimalsMatch(ppf, baselines.ppf)) {
+    overrides.ppf_rate = ppf;
+  }
+  const nps = parseRateToDecimal(edited.nps);
+  if (nps !== null && baselines.nps !== null && !rateDecimalsMatch(nps, baselines.nps)) {
+    overrides.nps_rate = nps;
+  }
+  const mf = parseRateToDecimal(edited.mf);
+  if (
+    mf !== null &&
+    baselines.mfExpectedReturn != null &&
+    !rateDecimalsMatch(mf, baselines.mfExpectedReturn)
+  ) {
+    overrides.mf_expected_return = mf;
+  }
+  return Object.keys(overrides).length > 0 ? overrides : null;
+}
+
+function planTabLabel(
+  tabs: PlanTab[],
+  overrides: PlanOverrides | null,
+): string {
+  if (!overrides || Object.keys(overrides).length === 0) {
+    return "Original (Airtable)";
+  }
+  const hasOriginal = tabs.some((t) => t.overrides === null);
+  const overrideCount = tabs.filter((t) => t.overrides !== null).length;
+  return `Plan ${overrideCount + (hasOriginal ? 2 : 1)}`;
+}
 
 type RsuTickerPrice = {
   price_usd: number;
@@ -130,7 +295,7 @@ function KvGrid({ items }: { items: Record<string, string | number | null | unde
   );
 }
 
-function DataTable({ rows }: { rows: Record<string, string | number>[] }) {
+function DataTable({ rows }: { rows: Record<string, ReactNode>[] }) {
   if (!rows.length) return <p className="text-xs italic text-gray-400 dark:text-gray-500">No data recorded.</p>;
   const cols = Object.keys(rows[0]);
   return (
@@ -167,6 +332,51 @@ function StatBox({ label, value, color = "text-gray-900 dark:text-gray-100" }: {
     <div className="rounded-lg border border-blue-100 bg-white px-3 py-2.5 dark:border-blue-900/50 dark:bg-gray-900">
       <p className="mb-1 text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400">{label}</p>
       <p className={`text-sm font-bold ${color}`}>{value}</p>
+    </div>
+  );
+}
+
+function InlineRateCell({
+  value,
+  baselineDecimal,
+  onChange,
+  onReset,
+}: {
+  value: string;
+  baselineDecimal?: number | null;
+  onChange: (v: string) => void;
+  onReset: () => void;
+}) {
+  const parsed = parseRateToDecimal(value);
+  const modified =
+    baselineDecimal != null &&
+    parsed !== null &&
+    !rateDecimalsMatch(parsed, baselineDecimal);
+  return (
+    <div className="flex min-w-[5.5rem] items-center gap-1">
+      <input
+        type="text"
+        inputMode="decimal"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        title="Rate as percentage (e.g. 8.50 for 8.5%)"
+        className={`w-14 rounded border px-1.5 py-0.5 text-xs font-semibold ${
+          modified
+            ? "border-amber-400 bg-amber-50 text-amber-950 dark:border-amber-600 dark:bg-amber-950/40 dark:text-amber-100"
+            : "border-gray-200 bg-white text-gray-800 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+        }`}
+      />
+      <span className="text-[10px] text-gray-500 dark:text-gray-400">%</span>
+      {modified && (
+        <button
+          type="button"
+          onClick={onReset}
+          className="text-[10px] font-semibold text-amber-700 hover:underline dark:text-amber-400"
+          title="Reset to Airtable value"
+        >
+          ↺
+        </button>
+      )}
     </div>
   );
 }
@@ -467,12 +677,28 @@ export function ClientsDashboard() {
   const [error, setError]             = useState<string | null>(null);
   const [activeTab, setActiveTab]     = useState<"overview" | "kids" | "spouse" | "liabilities">("overview");
   const [chartMode, setChartMode]     = useState<"detailed" | "liquid">("detailed");
-  const [planResult, setPlanResult]   = useState<{
-    ok?: boolean;
-    summary?: Record<string, unknown>;
-  } | null>(null);
+  const [planTabs, setPlanTabs] = useState<PlanTab[]>([]);
+  const [activePlanTabId, setActivePlanTabId] = useState<string | null>(null);
+  const [epfRatePct, setEpfRatePct] = useState("");
+  const [ppfRatePct, setPpfRatePct] = useState("");
+  const [npsRatePct, setNpsRatePct] = useState("");
+  const [mfRatePct, setMfRatePct] = useState("");
+  const [originalRates, setOriginalRates] = useState<AppliedRates>(emptyAppliedRates());
   const [educationTargets, setEducationTargets] =
     useState<Record<string, { ug?: string; pg?: string }>>({});
+
+  const activePlanTab = planTabs.find((t) => t.id === activePlanTabId) ?? null;
+  const activePlanSummary = activePlanTab?.summary;
+  const displayedAppliedRates: AppliedRates = activePlanTab?.appliedRates ?? originalRates;
+  const planOverridesForRun = buildPlanOverridesForRun(
+    {
+      epf: epfRatePct,
+      ppf: ppfRatePct,
+      nps: npsRatePct,
+      mf: mfRatePct,
+    },
+    originalRates,
+  );
 
   useEffect(() => {
     fetch("/api/airtable/clients")
@@ -483,23 +709,81 @@ export function ClientsDashboard() {
 
   useEffect(() => {
     if (!selectedId) return;
-    setLoadingDetail(true); setDetail(null); setEducationTargets({}); setActiveTab("overview");
+    setLoadingDetail(true);
+    setDetail(null);
+    setEducationTargets({});
+    setActiveTab("overview");
+    setPlanTabs([]);
+    setActivePlanTabId(null);
     fetch(`/api/airtable/clients/${selectedId}`)
       .then(r => r.json())
       .then(data => { if (data.error) throw new Error(data.error); setDetail(data); setLoadingDetail(false); })
       .catch(e => { setError(e.message); setLoadingDetail(false); });
   }, [selectedId]);
 
+  useEffect(() => {
+    if (!detail?.client_data) return;
+    const ret = detail.client_data.investment_details?.retirement_investments;
+    const epf = ret?.epf?.[0]?.interest_rate ?? null;
+    const ppf = ret?.ppf?.[0]?.interest_rate ?? null;
+    const nps = ret?.nps?.[0]?.expected_corpus_growth_rate ?? null;
+    const mf = detail.client_data.investment_details?.mutual_funds?.[0]?.expected_annual_return ?? null;
+    const originals: AppliedRates = {
+      epf,
+      ppf,
+      nps,
+      mfExpectedReturn: mf,
+    };
+    setOriginalRates(originals);
+    const synced = syncEditableFromApplied(originals);
+    setEpfRatePct(synced.epf);
+    setPpfRatePct(synced.ppf);
+    setNpsRatePct(synced.nps);
+    setMfRatePct(synced.mf);
+  }, [detail?.record_id]);
+
+  /** On tab switch, reset editable cells to that tab's frozen appliedRates (not live edits). */
+  useEffect(() => {
+    if (!activePlanTab) return;
+    const synced = syncEditableFromApplied(activePlanTab.appliedRates);
+    setEpfRatePct(synced.epf);
+    setPpfRatePct(synced.ppf);
+    setNpsRatePct(synced.nps);
+    setMfRatePct(synced.mf);
+  }, [activePlanTabId, activePlanTab]);
+
+  const handlePlanComplete = (payload: {
+    overrides: PlanOverrides | null;
+    appliedRates: AppliedRates;
+    summary: PlanSummary;
+    label?: string;
+  }) => {
+    setPlanTabs((prev) => {
+      const id = `plan-${Date.now()}-${prev.length}`;
+      const label = payload.label ?? planTabLabel(prev, payload.overrides);
+      const tab: PlanTab = {
+        id,
+        label,
+        overrides: payload.overrides,
+        appliedRates: payload.appliedRates,
+        summary: payload.summary,
+      };
+      setActivePlanTabId(id);
+      return [...prev, tab];
+    });
+  };
+
   useCopilotReadable({ description: "List of financial planning clients", value: clients });
   useCopilotReadable({ description: "Selected client full financial data", value: detail ?? "No client selected" });
   useCopilotReadable({
     description:
       "LangGraph financial plan output for the selected client (from Make plan). Includes goal allocations with funding sources, risk appetite, liquidity, spending behavior, prioritized goals, and retirement scheme breakdown. Not available until the user runs Make plan.",
-    value: planResult?.summary
+    value: activePlanSummary
       ? {
           record_id: selectedId,
           generated: true,
-          plan_summary: planResult.summary,
+          active_tab: activePlanTab?.label ?? null,
+          plan_summary: activePlanSummary,
         }
       : {
           record_id: selectedId,
@@ -567,6 +851,7 @@ export function ClientsDashboard() {
   const expenses   = fs?.monthly_expenses_excl_emis ?? 0;
   const vacation   = (fs?.annual_vacation_expenses ?? 0) / 12;
   const misc       = fs?.miscellaneous_kids_education_expenses_monthly ?? 0;
+  // TODO(F2-followup): surplus excludes EMIs — revisit when defining "true investable surplus"
   const surplus    = salary + otherInc - expenses - vacation - misc;
   const totalIncome = salary + otherInc;
   const savingsRate = totalIncome > 0 ? (surplus / totalIncome * 100) : 0;
@@ -613,12 +898,12 @@ export function ClientsDashboard() {
 
   const spouseData: SpouseData | null = mergeSpouseData(
     cd?.spouse,
-    planResult?.summary?.spouse_preview as SpouseData | null | undefined,
+    activePlanSummary?.spouse_preview as SpouseData | null | undefined,
     { spouse_name: cd?.spouse_name, spouse_dob: cd?.spouse_dob },
   );
 
   const marriageGoals: MarriageGoalRow[] = (() => {
-    const preview = (planResult?.summary?.marriage_goals_preview ?? []) as MarriageGoalRow[];
+    const preview = (activePlanSummary?.marriage_goals_preview ?? []) as MarriageGoalRow[];
     if (preview.length) return preview;
     return (goals ?? [])
       .filter(g => /marriage/i.test(g.goal_name))
@@ -639,15 +924,15 @@ export function ClientsDashboard() {
     }));
 
   const educationBlocks = buildEducationPlanningBlocks(eduPlans, kids, {
-    targetsPreview: (planResult?.summary?.education_targets_preview ?? []) as Array<
+    targetsPreview: (activePlanSummary?.education_targets_preview ?? []) as Array<
       EducationTargetYears & { child_name?: string }
     >,
-    planningPreview: (planResult?.summary?.education_planning_preview ?? []) as EducationPlanningPreviewRow[],
+    planningPreview: (activePlanSummary?.education_planning_preview ?? []) as EducationPlanningPreviewRow[],
   });
 
   const realEstateProperties: RealEstateProperty[] =
-    ((planResult?.summary?.real_estate_preview as RealEstateProperty[] | undefined)?.length
-      ? (planResult!.summary!.real_estate_preview as RealEstateProperty[])
+    ((activePlanSummary?.real_estate_preview as RealEstateProperty[] | undefined)?.length
+      ? (activePlanSummary!.real_estate_preview as RealEstateProperty[])
       : inv?.real_estate_investment) ?? [];
 
   const detailTabs = (
@@ -697,7 +982,12 @@ export function ClientsDashboard() {
             <FinancialPlanPanel
               recordId={selectedId}
               disabled={loadingDetail}
-              onPlanResult={setPlanResult}
+              planOverrides={planOverridesForRun}
+              originalRates={originalRates}
+              planTabs={planTabs}
+              activeTabId={activePlanTabId}
+              onActiveTabChange={setActivePlanTabId}
+              onPlanComplete={handlePlanComplete}
               educationBlocks={educationBlocks}
               educationTargets={educationTargets}
             />
@@ -762,10 +1052,65 @@ export function ClientsDashboard() {
                     }} />
 
                     <SectionLabel icon="🏦" text="Retirement Investments" />
+                    <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">
+                      Edit rates inline (percent, e.g. 8.50), then Make plan — Airtable is not updated.
+                    </p>
+                    <PlanChangeBanner
+                      original={originalRates}
+                      applied={displayedAppliedRates}
+                    />
                     <DataTable rows={[
-                      ...(ret?.epf ?? []).map(x => ({ Type: "EPF", "Current Value": inr(x.current_value), "Contribution": `${inr(x.employee_employer_contribution_monthly)} /mo`, "Rate": pct(x.interest_rate) })),
-                      ...(ret?.ppf ?? []).map(x => ({ Type: "PPF", "Current Value": inr(x.current_value), "Contribution": `${inr(x.annual_contribution)} /yr`, "Rate": pct(x.interest_rate) })),
-                      ...(ret?.nps ?? []).map(x => ({ Type: "NPS", "Current Value": inr(x.current_value), "Contribution": `${inr(x.monthly_contribution)} /mo`, "Rate": "—" })),
+                      ...(ret?.epf ?? []).map(x => ({
+                        Type: "EPF",
+                        "Current Value": inr(x.current_value),
+                        Contribution: `${inr(x.employee_employer_contribution_monthly)} /mo`,
+                        Rate: (
+                          <InlineRateCell
+                            value={epfRatePct}
+                            baselineDecimal={originalRates.epf}
+                            onChange={setEpfRatePct}
+                            onReset={() =>
+                              setEpfRatePct(
+                                originalRates.epf != null ? decimalToPctInput(originalRates.epf) : "",
+                              )
+                            }
+                          />
+                        ),
+                      })),
+                      ...(ret?.ppf ?? []).map(x => ({
+                        Type: "PPF",
+                        "Current Value": inr(x.current_value),
+                        Contribution: `${inr(x.annual_contribution)} /yr`,
+                        Rate: (
+                          <InlineRateCell
+                            value={ppfRatePct}
+                            baselineDecimal={originalRates.ppf}
+                            onChange={setPpfRatePct}
+                            onReset={() =>
+                              setPpfRatePct(
+                                originalRates.ppf != null ? decimalToPctInput(originalRates.ppf) : "",
+                              )
+                            }
+                          />
+                        ),
+                      })),
+                      ...(ret?.nps ?? []).map(x => ({
+                        Type: "NPS",
+                        "Current Value": inr(x.current_value),
+                        Contribution: `${inr(x.monthly_contribution)} /mo`,
+                        "Growth Rate": (
+                          <InlineRateCell
+                            value={npsRatePct}
+                            baselineDecimal={originalRates.nps}
+                            onChange={setNpsRatePct}
+                            onReset={() =>
+                              setNpsRatePct(
+                                originalRates.nps != null ? decimalToPctInput(originalRates.nps) : "",
+                              )
+                            }
+                          />
+                        ),
+                      })),
                     ]} />
 
                     {(inv?.mutual_funds ?? []).length > 0 && <>
@@ -773,7 +1118,20 @@ export function ClientsDashboard() {
                       <DataTable rows={(inv!.mutual_funds).map(m => ({
                         "Current Value": inr(m.current_value),
                         "SIP Amount": inr(m.sip_amount),
-                        "Expected Return": m.expected_annual_return ? `${(m.expected_annual_return * 100).toFixed(1)}%` : "—",
+                        "Expected Return": (
+                          <InlineRateCell
+                            value={mfRatePct}
+                            baselineDecimal={originalRates.mfExpectedReturn}
+                            onChange={setMfRatePct}
+                            onReset={() =>
+                              setMfRatePct(
+                                originalRates.mfExpectedReturn != null
+                                  ? decimalToPctInput(originalRates.mfExpectedReturn)
+                                  : "",
+                              )
+                            }
+                          />
+                        ),
                       }))} />
                     </>}
 
@@ -876,6 +1234,10 @@ export function ClientsDashboard() {
 
                     {eduPlans.length > 0 && <>
                       <SectionLabel icon="🎓" text="Education Planning" />
+                      <PlanChangeBanner
+                        original={originalRates}
+                        applied={displayedAppliedRates}
+                      />
                       <EducationPlanningSection
                         blocks={educationBlocks}
                         targets={educationTargets}

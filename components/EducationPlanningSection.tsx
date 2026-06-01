@@ -6,6 +6,11 @@ const TH =
   "align-middle px-4 py-2 text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400";
 const TD = "align-middle px-4 py-2 text-gray-700 dark:text-gray-300";
 
+function fmtYear(n: number | null | undefined): string {
+  if (n == null || Number.isNaN(n)) return "—";
+  return String(n);
+}
+
 /** Target Amount = user-entered final corpus (no inflation). */
 function StageTable({
   stage,
@@ -22,7 +27,8 @@ function StageTable({
         <tr className="border-b border-gray-100 bg-gray-50 dark:border-gray-700 dark:bg-gray-800">
           <th className={`${TH} text-left`}>Stream</th>
           <th className={`${TH} text-center`}>Course Duration</th>
-          <th className={`${TH} text-center`}>Target Year</th>
+          <th className={`${TH} text-center`}>Start Year</th>
+          <th className={`${TH} text-center`}>End Year</th>
           <th className={`${TH} text-right`}>Target Amount</th>
         </tr>
       </thead>
@@ -34,7 +40,8 @@ function StageTable({
           <td className={`${TD} text-center`}>
             {stage.duration != null ? `${stage.duration} yrs` : "—"}
           </td>
-          <td className={`${TD} text-center`}>{stage.targetYear ?? "—"}</td>
+          <td className={`${TD} text-center`}>{fmtYear(stage.startYear)}</td>
+          <td className={`${TD} text-center`}>{fmtYear(stage.endYear)}</td>
           <td className={`${TD} text-right`}>
             <input
               type="number"

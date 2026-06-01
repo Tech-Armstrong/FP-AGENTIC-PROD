@@ -547,7 +547,6 @@ Set repo-root `.env` from `.env.example` (`AIRTABLE_*`, `AZURE_OPENAI_*` for cha
 | Dashboard empty / 502 | :8001 down or bad `AIRTABLE_TOKEN` | Start `airtable_main.py`; fix token/base |
 | Make plan 503 | LangGraph not in backend venv | `pip install -r backend/requirements.txt` |
 | Make plan 500 | Azure missing for `agentic_nodes` | Set `AZURE_API_*` in `.env` |
-| Error says port **8000** for clients | Copy-paste bug in `ClientsDashboard.tsx` | API is **8001** |
 | Plan gone after refresh | No persistence | Re-run Make plan |
 | Chat cites stale allocations | Old `planResult` readable | Re-run Make plan after data change |
 
@@ -583,7 +582,6 @@ Set repo-root `.env` from `.env.example` (`AIRTABLE_*`, `AZURE_OPENAI_*` for cha
 - **`monthly_surplus` in `calculate_age`** omits EMI deductions (differs from dashboard display in `ClientsDashboard` which may show different surplus).
 - **Hardcoded defaults** — retirement life expectancy 85, inflation 6%, real return 4%, EPF 8.5% in mapper; education fee lookup fallbacks ₹10L/₹12L remain as backend safety net, but the UI requires the user to enter target corpus inline before Make plan.
 - **`AIRTABLE_BASE_ID` default** in `airtable_main.py` if env unset (`appE5VYaHMHmorADN`).
-- **`ClientsDashboard` error text** references port 8000 instead of 8001.
 - **`Financial_Planning/Main/main.py`** — standalone PPT path; extra LLM calls not used by dashboard.
 - **`clarify_with_user` tool** uses blocking `input()` — unusable in server context if ever called.
 - **Heavy `print` debugging** in workflow nodes — no structured logging.
@@ -666,7 +664,6 @@ No coordinated multi-agent system. One chat ReAct agent plus an inner ReAct help
 
 ## 24. Things to clean up later
 
-- Fix `ClientsDashboard` port 8000 → 8001 error message.
 - Remove dead `'END'` branch in `workflow.py` conditional or implement it.
 - Wire or delete emergency-fund node; align surplus definition with dashboard.
 - Persist plan results; optional Airtable sync.

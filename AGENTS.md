@@ -61,7 +61,7 @@ Tests: `npm test` (vitest), `npm run test:agent` (pytest in `agent/tests`).
 ## Known doc drift (verify before trusting PROJECT_OVERVIEW.md)
 
 The overview is the architecture bible but has drifted from code in places. Confirmed as of this writing:
-1. The "port 8000" client-list error message is in **`components/DashboardSidebar.tsx`**, not `ClientsDashboard.tsx` (overview §17/§24).
+1. ~~Port 8000 client-list error message~~ — fixed in `components/DashboardSidebar.tsx` (was misdocumented as `ClientsDashboard.tsx`).
 2. The chat agent exposes **3 tools** (`getCurrentDate`, `searchInternet`, `request_policy_document`), not just `searchInternet` (overview §13).
 3. The planning workflow has **added nodes** (`calculate_term_insurance_requirement`, `wealth_at_retirement`); graph now ends `wealth_at_retirement → END`, not at 20 nodes (overview §5.3).
 4. New components exist that the file inventory (§9) doesn't list (`DashboardSidebar`, `SpouseDetailsPanel`, `RealEstateTable`, `MarriageGoalsSection`, `EducationPlanningSection`, `agent/policy_document_tool.py`, …).

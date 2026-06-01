@@ -22,10 +22,14 @@ describe("buildEducationPlanningBlocks", () => {
     const blocks = buildEducationPlanningBlocks(plans, kids);
     expect(blocks).toHaveLength(1);
     expect(blocks[0].ug.duration).toBe(5);
+    expect(blocks[0].ug.startYear).toBe(UG_START);
+    expect(blocks[0].ug.endYear).toBe(UG_START + 5);
     expect(blocks[0].ug.targetYear).toBe(UG_START + 5);
     expect(blocks[0].hasPg).toBe(true);
     expect(blocks[0].pg?.duration).toBe(3);
-    expect(blocks[0].pg?.targetYear).toBe(UG_START + 5 + 3);
+    expect(blocks[0].pg?.startYear).toBe(UG_START + 5);
+    expect(blocks[0].pg?.endYear).toBe(UG_START + 8);
+    expect(blocks[0].pg?.targetYear).toBe(UG_START + 5);
   });
 
   it("NA stream: UG only, no PG block", () => {
@@ -104,7 +108,11 @@ describe("buildEducationPlanningBlocks", () => {
         },
       ],
     });
+    expect(blocks[0].ug.startYear).toBe(expected.ug_start_year);
+    expect(blocks[0].ug.endYear).toBe(expected.ug_end_year);
     expect(blocks[0].ug.targetYear).toBe(expected.ug_target_year);
+    expect(blocks[0].pg?.startYear).toBe(expected.pg_start_year);
+    expect(blocks[0].pg?.endYear).toBe(expected.pg_end_year);
     expect(blocks[0].pg?.targetYear).toBe(expected.pg_target_year);
     expect(blocks[0].ug.futureCost).toBe(1_500_000);
   });

@@ -206,7 +206,7 @@ export function DashboardSidebar({
             {error}
             <br />
             <span className="text-muted-foreground">
-              Is the FastAPI server running on port 8000?
+              Is the FastAPI server running on port 8001?
             </span>
           </div>
         )}

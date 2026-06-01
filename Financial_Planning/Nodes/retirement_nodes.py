@@ -340,9 +340,9 @@ def retirement_goal(state: ClientState):
     retirement_age = state['client_data']['client_data']['retirement_age']
     current_date=date.today()
     current_year=current_date.year
+    years_to_retire = retirement_age - client_data3['client_data']['client_age']
 
     if required_retirement_corpus>estimated_retirement_corpus:
-        years_to_retire= retirement_age - client_data3['client_data']['client_age']
         result={} 
         result['goal_name']="retirement"
         result['target_corpus']=required_retirement_corpus 
@@ -390,7 +390,7 @@ def retirement_goal(state: ClientState):
             result['funded_from']=[]
         #result['sip_amount']=0
         #result['sip_years']=0
-        #result['surplus']=estimated_retirement_corpus-required_retirement_corpus
+        result['surplus']=estimated_retirement_corpus-required_retirement_corpus
     
     retirement_goal=[result]
 

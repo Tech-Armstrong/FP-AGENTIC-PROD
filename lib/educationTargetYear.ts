@@ -36,10 +36,18 @@ export type EducationChildInput = {
 export type EducationTargetYears = {
   ug_duration: number;
   ug_start_year: number;
+  /** Program end; equals ug_target_year (workflow funding year). */
+  ug_end_year: number;
   ug_target_year: number;
   pg_stream: unknown;
   pg_duration: number;
+  /** PG program start; equals pg_target_year (workflow funding year). */
+  pg_start_year: number | null;
+  /** PG program end; equals pg_program_end_year. */
+  pg_end_year: number | null;
   pg_target_year: number | null;
+  /** Alias for pg_end_year — program span for callers that used this name. */
+  pg_program_end_year: number | null;
 };
 
 function field<T>(child: EducationChildInput, ...keys: string[]): T | undefined {
@@ -69,6 +77,12 @@ function isEmptyDuration(value: unknown): boolean {
   return false;
 }
 
+function positiveAirtableDuration(value: unknown): number | null {
+  if (isEmptyDuration(value)) return null;
+  const parsed = parseDuration(value, 0);
+  return parsed > 0 ? parsed : null;
+}
+
 export function resolveDuration(
   courseValue: unknown,
   airtableOther: unknown,
@@ -76,11 +90,10 @@ export function resolveDuration(
 ): number {
   const k = normalizeCourse(courseValue);
   if (k === "NA") return 0;
+  const override = positiveAirtableDuration(airtableOther);
+  if (override != null) return override;
   if (k in COURSE_DURATION) return COURSE_DURATION[k];
-  if (k === "OTHER") {
-    if (isEmptyDuration(airtableOther)) return def;
-    return parseDuration(airtableOther, def);
-  }
+  if (k === "OTHER") return def;
   return def;
 }
 
@@ -129,16 +142,23 @@ export function computeEducationTargetYears(
 
   const ugDuration = resolveDuration(ugStream, ugOtherDuration(child), DEFAULT_UG_DURATION);
   const ugTargetYear = ugStartYear + ugDuration;
+  const ugEndYear = ugTargetYear;
 
   let pgDuration = resolveDuration(pgStream, pgOtherDuration(child), DEFAULT_UG_DURATION);
 
   let pgTargetYear: number | null = null;
+  let pgProgramEndYear: number | null = null;
+  let pgStartYear: number | null = null;
+  let pgEndYear: number | null = null;
   if (pgDuration > 0 && normalizeCourse(pgStream) !== "NA") {
     const dest = String(pgDestination ?? "")
       .trim()
       .toUpperCase();
     if (dest && dest !== "NA" && dest !== "NONE") {
-      pgTargetYear = ugTargetYear + pgDuration;
+      pgTargetYear = ugTargetYear;
+      pgStartYear = pgTargetYear;
+      pgEndYear = ugTargetYear + pgDuration;
+      pgProgramEndYear = pgEndYear;
     } else {
       pgDuration = 0;
     }
@@ -149,10 +169,14 @@ export function computeEducationTargetYears(
   return {
     ug_duration: ugDuration,
     ug_start_year: ugStartYear,
+    ug_end_year: ugEndYear,
     ug_target_year: ugTargetYear,
     pg_stream: pgStream ?? null,
     pg_duration: pgDuration,
+    pg_start_year: pgStartYear,
+    pg_end_year: pgEndYear,
     pg_target_year: pgTargetYear,
+    pg_program_end_year: pgProgramEndYear,
   };
 }
 

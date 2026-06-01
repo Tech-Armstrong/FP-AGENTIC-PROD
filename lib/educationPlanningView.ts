@@ -23,7 +23,10 @@ export type EducationStageView = {
   stream: string | null;
   destination: string | null;
   duration: number | null;
+  /** @deprecated Prefer startYear/endYear for display; equals endYear for UG, startYear for PG funding. */
   targetYear: number | null;
+  startYear: number | null;
+  endYear: number | null;
   currentCost: number | null;
   futureCost: number | null;
   corpusGap: number | null;
@@ -80,10 +83,40 @@ function emptyStage(): EducationStageView {
     destination: null,
     duration: null,
     targetYear: null,
+    startYear: null,
+    endYear: null,
     currentCost: null,
     futureCost: null,
     corpusGap: null,
     status: null,
+  };
+}
+
+function ugStageYears(row: {
+  ug_start_year?: number | null;
+  ug_end_year?: number | null;
+  ug_target_year?: number | null;
+}): { startYear: number | null; endYear: number | null; targetYear: number | null } {
+  const endYear = row.ug_end_year ?? row.ug_target_year ?? null;
+  return {
+    startYear: row.ug_start_year ?? null,
+    endYear,
+    targetYear: endYear,
+  };
+}
+
+function pgStageYears(row: {
+  pg_start_year?: number | null;
+  pg_end_year?: number | null;
+  pg_target_year?: number | null;
+  pg_program_end_year?: number | null;
+}): { startYear: number | null; endYear: number | null; targetYear: number | null } {
+  const startYear = row.pg_start_year ?? row.pg_target_year ?? null;
+  const endYear = row.pg_end_year ?? row.pg_program_end_year ?? null;
+  return {
+    startYear,
+    endYear,
+    targetYear: startYear,
   };
 }
 
@@ -99,11 +132,13 @@ function stageFromPreview(
       ? preview.ug_destination ?? planRow.graduation_destination
       : preview.pg_destination ?? planRow.post_graduation_destination) ?? null;
 
+  const years = side === "ug" ? ugStageYears(preview) : pgStageYears(preview);
+
   return {
     stream: stream != null && String(stream).trim() !== "" ? String(stream) : null,
     destination: destination != null && String(destination).trim() !== "" ? String(destination) : null,
     duration: side === "ug" ? preview.ug_duration ?? null : preview.pg_duration ?? null,
-    targetYear: side === "ug" ? preview.ug_target_year ?? null : preview.pg_target_year ?? null,
+    ...years,
     currentCost:
       side === "ug" ? preview.ug_current_cost ?? null : preview.pg_current_cost ?? null,
     futureCost:
@@ -119,6 +154,8 @@ function stageFromPlanRow(
   planRow: EducationPlanRow,
   targets: EducationTargetYears,
 ): EducationStageView {
+  const years = side === "ug" ? ugStageYears(targets) : pgStageYears(targets);
+
   return {
     stream:
       side === "ug"
@@ -129,7 +166,7 @@ function stageFromPlanRow(
         ? planRow.graduation_destination ?? null
         : planRow.post_graduation_destination ?? null,
     duration: side === "ug" ? targets.ug_duration : targets.pg_duration,
-    targetYear: side === "ug" ? targets.ug_target_year : targets.pg_target_year,
+    ...years,
     currentCost: null,
     futureCost: null,
     corpusGap: null,
@@ -190,10 +227,14 @@ export function buildEducationPlanningBlocks(
       (dob ? computeEducationTargetYears(planRow, dob) : {
         ug_duration: 4,
         ug_start_year: 0,
+        ug_end_year: 0,
         ug_target_year: 0,
         pg_stream: planRow.post_graduation_stream ?? null,
         pg_duration: 0,
+        pg_start_year: null,
+        pg_end_year: null,
         pg_target_year: null,
+        pg_program_end_year: null,
       });
 
     return buildEducationChildBlock(planRow, dob, targets, previewRow);
