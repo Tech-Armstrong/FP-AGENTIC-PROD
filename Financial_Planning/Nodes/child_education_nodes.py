@@ -174,6 +174,7 @@ def calculate_education_funding(state: ClientState):
             "pg_stream": targets.get('pg_stream'),
             "pg_duration": targets.get('pg_duration'),
             "pg_target_year": targets.get('pg_target_year'),
+            "user_target_corpus": child.get("user_target_corpus_graduation"),
         })
 
         pg_target_year = targets.get('pg_target_year')
@@ -195,6 +196,7 @@ def calculate_education_funding(state: ClientState):
                 "pg_stream": targets.get('pg_stream'),
                 "pg_duration": targets.get('pg_duration'),
                 "pg_target_year": pg_target_year,
+                "user_target_corpus": child.get("user_target_corpus_post_graduation"),
             })
         
     # 2. Sort goals chronologically by target year
@@ -208,7 +210,11 @@ def calculate_education_funding(state: ClientState):
     for goal in education_goals:
         # Calculate future cost of education (assuming 6% inflation)
         #goal['current_cost']
-        future_cost = calculate_future_value(goal['current_cost'], 0.06, goal['years_to_goal'])
+        user_target = goal.get('user_target_corpus')
+        if user_target is not None and float(user_target) > 0:
+            future_cost = float(user_target)
+        else:
+            future_cost = calculate_future_value(goal['current_cost'], 0.06, goal['years_to_goal'])
         goal['future_cost'] = round(future_cost, 2)
         
         total_future_corpus = 0.0

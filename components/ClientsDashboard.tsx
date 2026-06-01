@@ -471,6 +471,8 @@ export function ClientsDashboard() {
     ok?: boolean;
     summary?: Record<string, unknown>;
   } | null>(null);
+  const [educationTargets, setEducationTargets] =
+    useState<Record<string, { ug?: string; pg?: string }>>({});
 
   useEffect(() => {
     fetch("/api/airtable/clients")
@@ -481,7 +483,7 @@ export function ClientsDashboard() {
 
   useEffect(() => {
     if (!selectedId) return;
-    setLoadingDetail(true); setDetail(null); setActiveTab("overview");
+    setLoadingDetail(true); setDetail(null); setEducationTargets({}); setActiveTab("overview");
     fetch(`/api/airtable/clients/${selectedId}`)
       .then(r => r.json())
       .then(data => { if (data.error) throw new Error(data.error); setDetail(data); setLoadingDetail(false); })
@@ -630,6 +632,12 @@ export function ClientsDashboard() {
       }));
   })();
 
+  const handleEduTargetChange = (childName: string, side: "ug" | "pg", value: string) =>
+    setEducationTargets((prev) => ({
+      ...prev,
+      [childName]: { ...prev[childName], [side]: value },
+    }));
+
   const educationBlocks = buildEducationPlanningBlocks(eduPlans, kids, {
     targetsPreview: (planResult?.summary?.education_targets_preview ?? []) as Array<
       EducationTargetYears & { child_name?: string }
@@ -690,6 +698,8 @@ export function ClientsDashboard() {
               recordId={selectedId}
               disabled={loadingDetail}
               onPlanResult={setPlanResult}
+              educationBlocks={educationBlocks}
+              educationTargets={educationTargets}
             />
 
             {/* ── Net Worth + Portfolio row ── */}
@@ -866,7 +876,11 @@ export function ClientsDashboard() {
 
                     {eduPlans.length > 0 && <>
                       <SectionLabel icon="🎓" text="Education Planning" />
-                      <EducationPlanningSection blocks={educationBlocks} />
+                      <EducationPlanningSection
+                        blocks={educationBlocks}
+                        targets={educationTargets}
+                        onTargetChange={handleEduTargetChange}
+                      />
                     </>}
 
                     <MarriageGoalsSection goals={marriageGoals} />

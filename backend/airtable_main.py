@@ -86,8 +86,15 @@ class RsuRefreshBody(BaseModel):
     tickers: list[str] = []
 
 
+class EducationTarget(BaseModel):
+    name_of_kid: str
+    ug_target_amount: float | None = None
+    pg_target_amount: float | None = None
+
+
 class FinancialPlanRequest(BaseModel):
     record_id: str
+    education_targets: list[EducationTarget] | None = None
 
 
 @app.exception_handler(Exception)
@@ -689,6 +696,16 @@ def run_financial_plan(req: FinancialPlanRequest):
         raise HTTPException(status_code=502, detail=f"Airtable error: {resp.text}")
     fields = resp.json().get("fields", {})
     client_payload = airtable_record_to_client_data(fields)
+    if req.education_targets:
+        by_name = {t.name_of_kid: t for t in req.education_targets}
+        for row in client_payload.get("education_planning", []):
+            t = by_name.get(row.get("name_of_kid"))
+            if not t:
+                continue
+            if t.ug_target_amount is not None:
+                row["user_target_corpus_graduation"] = float(t.ug_target_amount)
+            if t.pg_target_amount is not None:
+                row["user_target_corpus_post_graduation"] = float(t.pg_target_amount)
     try:
         return run_financial_plan_for_client(client_payload)
     except FinancialPlanDependencyError as exc:

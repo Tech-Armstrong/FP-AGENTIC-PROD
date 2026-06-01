@@ -234,7 +234,7 @@ START
 | `calculate_all_retirement_investments` | `retirement_nodes.py` | Yes | EPF/PPF/NPS/ULIP FV via `utility_functions` |
 | `retirement_goal` | `retirement_nodes.py` | Yes | Corpus gap vs scheme grand total; emits retirement goal row |
 | `education_fees_calculation` | `child_education_nodes.py` | Yes (lookup) | Fees from **pickle defaults** (`College_Fees_Scrapper/*.pkl`) or hardcoded fallbacks (₹10L UG / ₹12L PG) — **not** live `education_fees_scrapper.py` in this graph |
-| `calculate_education_funding` | `child_education_nodes.py` | Yes | FV education costs, SSY/scheme usage, SIP gaps per child goal |
+| `calculate_education_funding` | `child_education_nodes.py` | Yes | Uses user-entered target corpus as `future_cost` when provided (no inflation); otherwise FV education costs from lookup @ 6%, SSY/scheme usage, SIP gaps per child goal |
 | `goals_future_value` | `goal_consolidation_nodes.py` | Yes | Saved amount @ 9%, capital @ 6% inflation; surplus cascade between goals |
 | `add_goals` | `goal_consolidation_nodes.py` | Yes | Merges financial + education + retirement goals; may inject post-retirement loan-closure goals |
 | `update_ulip_current_values` | `basic_calculations_nodes.py` | Yes | ULIP XIRR bisection, opportunity-cost vs equity/BAF benchmarks |
@@ -281,8 +281,10 @@ START
 ```
 Airtable record
     → GET /clients/{id} (dashboard load, cached in React `detail`)
-    → POST /financial-plan/run (re-fetch same record_id at run time)
+    → User enters education target amounts inline (React `educationTargets`, not persisted)
+    → POST /financial-plan/run (re-fetch same record_id at run time + optional education_targets)
     → airtable_record_to_client_data()  (field mapping, hardcoded rates e.g. EPF 8.5%)
+    → user targets injected onto education_planning rows (user_target_corpus_graduation / _post_graduation)
     → workflow.invoke(initial_state)
     → summarize_plan_state(full_state)  (~20 goal rows max in previews)
     → FinancialPlanPanel UI + useCopilotReadable
@@ -425,7 +427,7 @@ Repo-root `.env` is loaded by `agent/main.py`, `backend/airtable_main.py`, and p
 | `POST` | `/api/copilotkit` | CopilotKit run payload | SSE (LangGraph) or adapter stream | `:8000` or Azure |
 | `GET` | `/api/airtable/clients` | — | `{ clients: [{ record_id, name }] }` | `GET :8001/clients` |
 | `GET` | `/api/airtable/clients/[id]` | — | `{ record_id, client_data: {...} }` | `GET :8001/clients/{id}` |
-| `POST` | `/api/financial-plan/run` | `{ record_id: string }` | `{ ok, summary }` or `{ detail }` | `POST :8001/financial-plan/run` |
+| `POST` | `/api/financial-plan/run` | `{ record_id: string, education_targets?: [{ name_of_kid, ug_target_amount?, pg_target_amount? }] }` | `{ ok, summary }` or `{ detail }` | `POST :8001/financial-plan/run` |
 | `GET` | `/api/rsu-market-data` | — | RSU payload JSON | `GET :8001/rsu-market-data` |
 | `POST` | `/api/rsu-refresh` | optional tickers | refresh result | `POST :8001/rsu-refresh` |
 | `GET` | `/api/rsu/market-data` | `?ticker=` | legacy | `GET :8001/rsu/market-data` |
@@ -445,7 +447,7 @@ Repo-root `.env` is loaded by `agent/main.py`, `backend/airtable_main.py`, and p
 | `GET` | `/health` | — | `{ status: "ok" }` |
 | `GET` | `/clients` | — | `{ clients: [...] }` |
 | `GET` | `/clients/{record_id}` | — | `{ record_id, client_data }` |
-| `POST` | `/financial-plan/run` | `{ record_id }` | `{ ok: true, summary: {...} }` or HTTP error |
+| `POST` | `/financial-plan/run` | `{ record_id, education_targets?: [{ name_of_kid, ug_target_amount?, pg_target_amount? }] }` | `{ ok: true, summary: {...} }` or HTTP error |
 | `GET` | `/rsu-market-data` | — | parquet-derived JSON |
 | `POST` | `/rsu-refresh` | `{ tickers?: string[] }` | refresh metadata |
 | `GET` | `/rsu/market-data` | query `ticker` | legacy |
@@ -579,7 +581,7 @@ Set repo-root `.env` from `.env.example` (`AIRTABLE_*`, `AZURE_OPENAI_*` for cha
 - **`plan_goals` conditional maps `'END': END`** but router never returns `'END'`.
 - **`check_for_kid` / ages** — year-diff only, not month-accurate.
 - **`monthly_surplus` in `calculate_age`** omits EMI deductions (differs from dashboard display in `ClientsDashboard` which may show different surplus).
-- **Hardcoded defaults** — retirement life expectancy 85, inflation 6%, real return 4%, EPF 8.5% in mapper, fee fallbacks ₹10L/₹12L.
+- **Hardcoded defaults** — retirement life expectancy 85, inflation 6%, real return 4%, EPF 8.5% in mapper; education fee lookup fallbacks ₹10L/₹12L remain as backend safety net, but the UI requires the user to enter target corpus inline before Make plan.
 - **`AIRTABLE_BASE_ID` default** in `airtable_main.py` if env unset (`appE5VYaHMHmorADN`).
 - **`ClientsDashboard` error text** references port 8000 instead of 8001.
 - **`Financial_Planning/Main/main.py`** — standalone PPT path; extra LLM calls not used by dashboard.
@@ -657,7 +659,7 @@ No coordinated multi-agent system. One chat ReAct agent plus an inner ReAct help
 - **`useCopilotAction` + `available: "disabled"`** — UI only; server executes tools.
 - **`create_agent` hides chat graph topology** — no `add_node` in `agent/`.
 - **Active page is `ClientsDashboard`**, not `Dashboard.tsx`.
-- **Education fees in workflow** come from pickle/defaults, not the live Tavily scrapper in `education_fees_scrapper.py`.
+- **Education fees in workflow** come from pickle/defaults for lookup only; the displayed/education goal target corpus is entered inline by the user (required before Make plan) and passed as `education_targets` — not inflated when override is present.
 - **Full workflow state is discarded** — only `summary` crosses the API boundary.
 
 ---

@@ -1,10 +1,12 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, within, fireEvent } from "@testing-library/react";
 import { EducationPlanningSection } from "@/components/EducationPlanningSection";
 import type { EducationChildBlock } from "@/lib/educationPlanningView";
+
+const noop = () => {};
 
 const UG_START = 2010 + 18;
 
@@ -32,12 +34,6 @@ const withPgPrePlan: EducationChildBlock = {
     corpusGap: null,
     status: null,
   },
-};
-
-const withPgPostPlan: EducationChildBlock = {
-  ...withPgPrePlan,
-  ug: { ...withPgPrePlan.ug, futureCost: 1_500_000 },
-  pg: { ...withPgPrePlan.pg!, futureCost: 2_000_000 },
 };
 
 const naOnly: EducationChildBlock = {
@@ -68,7 +64,9 @@ function tableCellCounts(table: HTMLTableElement) {
 
 describe("EducationPlanningSection", () => {
   it("UG table has 4 horizontal columns and no removed columns", () => {
-    render(<EducationPlanningSection blocks={[withPgPrePlan]} />);
+    render(
+      <EducationPlanningSection blocks={[withPgPrePlan]} targets={{}} onTargetChange={noop} />,
+    );
     const ugSection = document.querySelector(".ug-section")!;
     const table = ugSection.querySelector("table") as HTMLTableElement;
     const { headers, cells } = tableCellCounts(table);
@@ -85,7 +83,9 @@ describe("EducationPlanningSection", () => {
   });
 
   it("child with PG: PG table has same 4 columns", () => {
-    render(<EducationPlanningSection blocks={[withPgPrePlan]} />);
+    render(
+      <EducationPlanningSection blocks={[withPgPrePlan]} targets={{}} onTargetChange={noop} />,
+    );
     const pgSection = document.querySelector(".pg-section")!;
     const table = pgSection.querySelector("table") as HTMLTableElement;
     const { headers, cells } = tableCellCounts(table);
@@ -97,25 +97,45 @@ describe("EducationPlanningSection", () => {
   });
 
   it("NA child: PG table absent, note present", () => {
-    render(<EducationPlanningSection blocks={[naOnly]} />);
+    render(
+      <EducationPlanningSection blocks={[naOnly]} targets={{}} onTargetChange={noop} />,
+    );
     expect(document.querySelector(".pg-section")).toBeNull();
     expect(
       screen.getByText(/No postgraduate education planned for Ravi/),
     ).toBeInTheDocument();
   });
 
-  it("Target Amount shows em dash pre-plan and INR post-plan", () => {
-    const { rerender } = render(<EducationPlanningSection blocks={[withPgPrePlan]} />);
+  it("Target Amount renders editable inputs bound to targets", () => {
+    const onTargetChange = vi.fn();
+    render(
+      <EducationPlanningSection
+        blocks={[withPgPrePlan]}
+        targets={{ Asha: { ug: "5000000", pg: "8000000" } }}
+        onTargetChange={onTargetChange}
+      />,
+    );
     const ugTable = document.querySelector(".ug-section table") as HTMLTableElement;
-    expect(within(ugTable).getAllByRole("cell")[3].textContent).toBe("—");
+    const pgTable = document.querySelector(".pg-section table") as HTMLTableElement;
+    const ugInput = within(ugTable).getByPlaceholderText("Enter amount") as HTMLInputElement;
+    const pgInput = within(pgTable).getByPlaceholderText("Enter amount") as HTMLInputElement;
+    expect(ugInput.value).toBe("5000000");
+    expect(pgInput.value).toBe("8000000");
+    fireEvent.change(ugInput, { target: { value: "6000000" } });
+    expect(onTargetChange).toHaveBeenCalledWith("Asha", "ug", "6000000");
+  });
 
-    rerender(<EducationPlanningSection blocks={[withPgPostPlan]} />);
-    expect(screen.getByText("₹15,00,000")).toBeInTheDocument();
-    expect(screen.getByText("₹20,00,000")).toBeInTheDocument();
+  it("NA child: no PG target input", () => {
+    render(
+      <EducationPlanningSection blocks={[naOnly]} targets={{}} onTargetChange={noop} />,
+    );
+    expect(document.querySelectorAll('input[placeholder="Enter amount"]')).toHaveLength(1);
   });
 
   it("MBBS shows 5 yrs in UG table; Other shows Airtable duration", () => {
-    render(<EducationPlanningSection blocks={[withPgPrePlan]} />);
+    render(
+      <EducationPlanningSection blocks={[withPgPrePlan]} targets={{}} onTargetChange={noop} />,
+    );
     expect(screen.getByText("5 yrs")).toBeInTheDocument();
 
     const otherChild: EducationChildBlock = {
@@ -134,12 +154,20 @@ describe("EducationPlanningSection", () => {
       },
       pg: null,
     };
-    render(<EducationPlanningSection blocks={[otherChild]} />);
+    render(
+      <EducationPlanningSection blocks={[otherChild]} targets={{}} onTargetChange={noop} />,
+    );
     expect(screen.getByText("6 yrs")).toBeInTheDocument();
   });
 
   it("renders separate blocks for multiple children", () => {
-    render(<EducationPlanningSection blocks={[withPgPrePlan, naOnly]} />);
+    render(
+      <EducationPlanningSection
+        blocks={[withPgPrePlan, naOnly]}
+        targets={{}}
+        onTargetChange={noop}
+      />,
+    );
     expect(document.querySelectorAll(".child-education-block")).toHaveLength(2);
   });
 });

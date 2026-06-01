@@ -12,6 +12,7 @@ import {
   Target,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { EducationChildBlock } from "@/lib/educationPlanningView";
 import { SsyTrackerSection, type SsySummaryEntry } from "./SsyTrackerSection";
 import { PieChart } from "./generative-ui/PieChart";
 
@@ -351,6 +352,37 @@ function FundingTable({ rows }: { rows: FundedFromRow[] }) {
   );
 }
 
+function PlanWarningOverlay({ onClose }: { onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="plan-warning-title"
+    >
+      <div className="mx-4 w-full max-w-[460px] rounded-2xl bg-white px-10 py-10 text-center shadow-2xl dark:bg-gray-900">
+        <h2
+          id="plan-warning-title"
+          className="mb-4 text-lg font-bold text-slate-900 dark:text-slate-100"
+        >
+          Education target required
+        </h2>
+        <p className="mb-6 text-[0.9rem] text-slate-600 dark:text-slate-300">
+          Please enter the education target amount for each child in the Education Planning section
+          before generating the plan.
+        </p>
+        <button
+          type="button"
+          onClick={onClose}
+          className="inline-flex items-center justify-center rounded-lg bg-[#2b6cb0] px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-[#2c5282]"
+        >
+          OK
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function PlanGeneratingOverlay({ activeStep }: { activeStep: number }) {
   const pct = Math.min(100, Math.round(((activeStep + 1) / STEPS.length) * 82));
 
@@ -413,13 +445,18 @@ export function FinancialPlanPanel({
   recordId,
   disabled,
   onPlanResult,
+  educationBlocks,
+  educationTargets,
 }: {
   recordId: string | null;
   disabled?: boolean;
   /** Notifies parent when plan completes — used for CopilotKit context. */
   onPlanResult?: (result: PlanResponse | null) => void;
+  educationBlocks?: EducationChildBlock[];
+  educationTargets?: Record<string, { ug?: string; pg?: string }>;
 }) {
   const [loading, setLoading] = React.useState(false);
+  const [showWarning, setShowWarning] = React.useState(false);
   const [overlayStep, setOverlayStep] = React.useState(0);
   const [result, setResult] = React.useState<PlanResponse | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -456,7 +493,19 @@ export function FinancialPlanPanel({
     };
   }, [loading]);
 
-  const runPlan = async () => {
+  const parseAmt = (v?: string): number | null => {
+    if (v == null || String(v).trim() === "") return null;
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+
+  const runPlan = async (
+    educationTargetsPayload?: Array<{
+      name_of_kid: string;
+      ug_target_amount?: number | null;
+      pg_target_amount?: number | null;
+    }>,
+  ) => {
     if (!recordId) return;
     setLoading(true);
     setError(null);
@@ -467,7 +516,10 @@ export function FinancialPlanPanel({
       const res = await fetch("/api/financial-plan/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ record_id: recordId }),
+        body: JSON.stringify({
+          record_id: recordId,
+          ...(educationTargetsPayload ? { education_targets: educationTargetsPayload } : {}),
+        }),
       });
       const data = (await res.json()) as PlanResponse;
       if (!res.ok) {
@@ -493,6 +545,27 @@ export function FinancialPlanPanel({
     }
   };
 
+  const onMakePlanClick = () => {
+    if (!recordId) return;
+    const blocks = educationBlocks ?? [];
+    const t = educationTargets ?? {};
+    const missing = blocks.some(
+      (b) =>
+        parseAmt(t[b.name]?.ug) == null ||
+        (b.hasPg && parseAmt(t[b.name]?.pg) == null),
+    );
+    if (missing) {
+      setShowWarning(true);
+      return;
+    }
+    const education_targets = blocks.map((b) => ({
+      name_of_kid: b.name,
+      ug_target_amount: parseAmt(t[b.name]?.ug),
+      pg_target_amount: b.hasPg ? parseAmt(t[b.name]?.pg) : null,
+    }));
+    runPlan(education_targets.length ? education_targets : undefined);
+  };
+
   const s = result?.summary;
   const sb = s?.spending_behavior;
   const savingPct =
@@ -514,6 +587,7 @@ export function FinancialPlanPanel({
   return (
     <>
       {loading ? <PlanGeneratingOverlay activeStep={overlayStep} /> : null}
+      {showWarning ? <PlanWarningOverlay onClose={() => setShowWarning(false)} /> : null}
 
       <div className="mb-6 overflow-hidden rounded-xl border border-slate-200 bg-[#f0f4f8] shadow-sm dark:border-slate-700 dark:bg-slate-900/50">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-[#1a365d] bg-white px-5 py-4 shadow-sm dark:border-sky-800 dark:bg-slate-900">
@@ -527,7 +601,7 @@ export function FinancialPlanPanel({
           </div>
           <button
             type="button"
-            onClick={runPlan}
+            onClick={onMakePlanClick}
             disabled={disabled || loading || !recordId}
             className={cn(
               "inline-flex shrink-0 items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white transition",
