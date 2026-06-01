@@ -1234,10 +1234,6 @@ export function ClientsDashboard() {
 
                     {eduPlans.length > 0 && <>
                       <SectionLabel icon="🎓" text="Education Planning" />
-                      <PlanChangeBanner
-                        original={originalRates}
-                        applied={displayedAppliedRates}
-                      />
                       <EducationPlanningSection
                         blocks={educationBlocks}
                         targets={educationTargets}
