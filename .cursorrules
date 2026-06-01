@@ -1,3 +1,5 @@
+> Executor role & plan-execution protocol: see `.cursor/rules/00-executor.mdc` (authoritative) and `AGENTS.md`. The rules below are project-specific conventions that still apply.
+
 # Cursor Rules — Financial Planning Copilot
 
 Project: Next.js + CopilotKit (v2 / AG-UI) frontend, Python LangGraph agent backend,
