@@ -38,7 +38,7 @@ from Financial_Planning.Nodes.basic_calculations_nodes import (calculate_age,ass
                                                               update_ulip_current_values, calculate_term_insurance_requirement)
 from Financial_Planning.Nodes.goal_consolidation_nodes import (goals_future_value, add_goals)
 from Financial_Planning.Nodes.child_education_nodes import (calculate_education_funding, education_fees_calculation)
-from Financial_Planning.Nodes.retirement_nodes import (calculate_retirement_corpus, calculate_all_retirement_investments, retirement_goal)
+from Financial_Planning.Nodes.retirement_nodes import (calculate_retirement_corpus, calculate_all_retirement_investments, retirement_goal, wealth_at_retirement)
 from Financial_Planning.Nodes.allocations_nodes import (plan_goals, plan_prepayments, choose_optimal_strategy)
 from Financial_Planning.Nodes.agentic_nodes import (risk_appetite_assessment, goal_prioritization)
 
@@ -68,6 +68,7 @@ graph.add_node('invest_monthly_surplus', invest_monthly_surplus)
 graph.add_node('choose_optimal_strategy', choose_optimal_strategy)
 graph.add_node('add_goals', add_goals)
 graph.add_node('update_ulip_current_values', update_ulip_current_values)
+graph.add_node('wealth_at_retirement', wealth_at_retirement)
 
 # create graph edges
 graph.add_edge(START, 'calculate_age') 
@@ -90,8 +91,9 @@ graph.add_edge('goal_prioritization','freed_emi_by_year')
 graph.add_edge('freed_emi_by_year' ,'plan_goals') 
 graph.add_conditional_edges('plan_goals', check_for_pre_payment, {True: 'plan_prepayments', False : 'choose_optimal_strategy' , 'END': END}) # condition to be added here as well
 graph.add_edge('choose_optimal_strategy', 'invest_monthly_surplus') 
-graph.add_edge('plan_prepayments', 'plan_goals')   
-graph.add_edge('invest_monthly_surplus', END) 
+graph.add_edge('plan_prepayments', 'plan_goals')
+graph.add_edge('invest_monthly_surplus', 'wealth_at_retirement')
+graph.add_edge('wealth_at_retirement', END)
 
 # Compiled graph — call from backend runner with client-specific state
 workflow = graph.compile()

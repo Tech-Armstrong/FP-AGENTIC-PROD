@@ -397,3 +397,112 @@ def retirement_goal(state: ClientState):
     print(f"retirement_goal: {retirement_goal}\n")
     print("--------------------------"*6)
     return {'retirement_goal': retirement_goal}
+
+
+def wealth_at_retirement(state: ClientState):
+    """
+    Aggregates the projected wealth available at the time of retirement.
+
+    Combines the future values of every corpus-building source at the
+    retirement year and returns a breakdown alongside the grand total:
+        - Retirement schemes (EPF / PPF / NPS) from retirement_schemes_fv
+        - Fixed deposits compounded to retirement
+        - Real estate grown at 3% p.a. to retirement
+        - SIP / freed-SIP / lumpsum contributions earmarked for the
+          retirement goal (from optimal_goal_allocation)
+
+    Note: SSY is intentionally excluded for now.
+
+    Returns:
+        dict: {
+            "wealth_at_retirement": {
+                "retirement_year": int,
+                "breakdown": { <source>: {"future_value": float, "rate": str}, ... },
+                "total_corpus": float
+            }
+        }
+    """
+    print("--------------------------"*6)
+    print("\n")
+    print("Node: wealth_at_retirement \n")
+    print("Aggregating projected wealth at retirement... \n")
+
+    client_data   = state.get('client_data', {})
+    invest_detail = client_data.get('investment_details', {})
+    ret_info      = state.get('required_retirement_corpus', {})
+    client_info   = ret_info.get('client_info', {})
+    years_to_ret  = client_info.get('years_to_retirement', 0)
+    retirement_year = date.today().year + years_to_ret
+
+    # ── 1. Retirement schemes (EPF / PPF / NPS) ──────────────────────────
+    schemes_fv      = state.get('retirement_schemes_fv', {})
+    category_totals = schemes_fv.get('category_totals', {})
+
+    epf_fv  = category_totals.get('epf',  0)
+    ppf_fv  = category_totals.get('ppf',  0)
+    nps_fv  = category_totals.get('nps',  0)
+
+    ret_investments = invest_detail.get('retirement_investments', {})
+    epf_rate = f"{ret_investments.get('epf', [{}])[0].get('interest_rate', 0.085) * 100:.1f}%" if ret_investments.get('epf') else "8.5%"
+    ppf_rate = f"{ret_investments.get('ppf', [{}])[0].get('interest_rate', 0.075) * 100:.1f}%" if ret_investments.get('ppf') else "7.5%"
+    nps_rate = f"{ret_investments.get('nps', [{}])[0].get('expected_corpus_growth_rate', 0.10) * 100:.1f}%" if ret_investments.get('nps') else "10%"
+
+    # ── 2. Fixed Deposits ────────────────────────────────────────────────
+    fd_fv   = 0
+    fd_rate = "-"
+    for asset in state.get('liquid_assets', []):
+        if 'fixed_deposits' in asset:
+            fd = asset['fixed_deposits']
+            principal  = fd.get('principal_amount', 0)
+            rate       = fd.get('interest_rate', 0.065)
+            fd_fv     += principal * ((1 + rate) ** years_to_ret)
+            fd_rate    = f"{rate * 100:.1f}%"
+
+    # ── 3. Real Estate (3% p.a. growth to retirement) ────────────────────
+    real_estate_fv  = 0
+    for asset in state.get('fixed_assets', []):
+        if 'real_estate_investment' in asset:
+            current_val    = asset['real_estate_investment'].get('current_market_value', 0)
+            real_estate_fv += current_val * ((1.03) ** years_to_ret)
+
+    # ── 4. SIP / Lumpsum / Freed-SIP contributions for Retirement ────────
+    sip_fv_retirement       = 0   # sip_from_surplus / sip_from_partial_surplus only
+    freed_sip_fv_retirement = 0   # freed_sip (released EMI redirected to retirement)
+    lumpsum_fv_retirement   = 0
+
+    for goal in state.get('optimal_goal_allocation', {}).get('goals', []):
+        if goal.get('goal_name', '').strip().lower() == 'retirement':
+            for fund in goal.get('funded_from', []):
+                ftype = fund.get('type', '')
+                fv    = fund.get('fv_contribution', 0)
+                if ftype in ('sip_from_surplus', 'sip_from_partial_surplus'):
+                    sip_fv_retirement += fv
+                elif ftype == 'freed_sip':
+                    freed_sip_fv_retirement += fv
+                elif ftype in ('lumpsum_from_liquid', 'lumpsum_from_liquid_partial'):
+                    lumpsum_fv_retirement += fv
+
+    # ── 5. Aggregate totals ──────────────────────────────────────────────
+    total_corpus = (fd_fv + epf_fv + ppf_fv + nps_fv + real_estate_fv
+                    + sip_fv_retirement + freed_sip_fv_retirement + lumpsum_fv_retirement)
+
+    wealth_breakdown = {
+        "epf":         {"future_value": round(epf_fv, 2),                 "rate": epf_rate},
+        "ppf":         {"future_value": round(ppf_fv, 2),                 "rate": ppf_rate},
+        "nps":         {"future_value": round(nps_fv, 2),                 "rate": nps_rate},
+        "fixed_deposits": {"future_value": round(fd_fv, 2),              "rate": fd_rate},
+        "real_estate": {"future_value": round(real_estate_fv, 2),        "rate": "3.0%"},
+        "sip":         {"future_value": round(sip_fv_retirement, 2),     "rate": "-"},
+        "freed_sip":   {"future_value": round(freed_sip_fv_retirement, 2), "rate": "-"},
+        "lumpsum":     {"future_value": round(lumpsum_fv_retirement, 2), "rate": "-"},
+    }
+
+    wealth = {
+        "retirement_year": retirement_year,
+        "breakdown":       wealth_breakdown,
+        "total_corpus":    round(total_corpus, 2),
+    }
+
+    print(f"wealth_at_retirement: {wealth}\n")
+    print("--------------------------"*6)
+    return {'wealth_at_retirement': wealth}

@@ -6,12 +6,14 @@ import {
   ArrowRightLeft,
   Heart,
   Landmark,
+  PiggyBank,
   Shield,
   Sparkles,
   Target,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SsyTrackerSection, type SsySummaryEntry } from "./SsyTrackerSection";
+import { PieChart } from "./generative-ui/PieChart";
 
 type SchemeBreakdownRow = {
   type?: string;
@@ -62,6 +64,16 @@ type PlanSummary = {
     total_cover_required?: number;
     breakdown?: Record<string, number>;
     note?: string;
+  } | null;
+  wealth_at_retirement_preview?: {
+    retirement_year?: number | null;
+    total_corpus?: number | null;
+    rows?: {
+      key?: string;
+      label?: string;
+      future_value?: number | null;
+      rate?: string;
+    }[];
   } | null;
 };
 
@@ -765,6 +777,70 @@ export function FinancialPlanPanel({
                       {s.term_insurance_requirement.note}
                     </p>
                   ) : null}
+                </div>
+              ) : null}
+
+              {s.wealth_at_retirement_preview &&
+              (s.wealth_at_retirement_preview.rows?.length ?? 0) > 0 ? (
+                <div className="mb-7">
+                  <ReviewSectionTitle icon={PiggyBank}>
+                    Wealth at retirement
+                    {s.wealth_at_retirement_preview.retirement_year
+                      ? ` (${s.wealth_at_retirement_preview.retirement_year})`
+                      : ""}
+                  </ReviewSectionTitle>
+                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                    {/* Left half: donut chart */}
+                    <div className="min-w-0">
+                      <PieChart
+                        data={(s.wealth_at_retirement_preview.rows ?? [])
+                          .filter((r) => Number(r.future_value) > 0)
+                          .map((r) => ({
+                            label: r.label || r.key || "—",
+                            value: Number(r.future_value ?? 0),
+                          }))}
+                      />
+                    </div>
+                    {/* Right half: asset / corpus table */}
+                    <div className="min-w-0 overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
+                      <table className="w-full min-w-[260px] border-collapse text-left text-[0.83rem]">
+                        <thead className="bg-slate-100 text-[0.72rem] font-bold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                          <tr>
+                            <th className="px-3.5 py-2.5">Asset</th>
+                            <th className="px-3.5 py-2.5 text-right">Corpus created</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(s.wealth_at_retirement_preview.rows ?? []).map((r, i) => (
+                            <tr
+                              key={r.key ?? i}
+                              className="border-b border-slate-200 dark:border-slate-700"
+                            >
+                              <td className="px-3.5 py-2.5 text-slate-700 dark:text-slate-300">
+                                {r.label || r.key}
+                                {r.rate && r.rate !== "-" ? (
+                                  <span className="ml-1.5 text-[0.72rem] text-slate-400 dark:text-slate-500">
+                                    @ {r.rate}
+                                  </span>
+                                ) : null}
+                              </td>
+                              <td className="px-3.5 py-2.5 text-right font-medium text-slate-900 dark:text-slate-100">
+                                {fmtInr(r.future_value)}
+                              </td>
+                            </tr>
+                          ))}
+                          <tr className="bg-slate-50 font-semibold dark:bg-slate-800/80">
+                            <td className="px-3.5 py-2.5 text-slate-900 dark:text-slate-100">
+                              Total corpus
+                            </td>
+                            <td className="px-3.5 py-2.5 text-right text-slate-900 dark:text-slate-100">
+                              {fmtInr(s.wealth_at_retirement_preview.total_corpus)}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
                 </div>
               ) : null}
 

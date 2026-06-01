@@ -545,6 +545,46 @@ def summarize_plan_state(state: dict) -> dict:
             ),
         }
 
+    # Wealth at retirement — donut + table breakdown of the projected corpus.
+    wealth_at_retirement_preview = None
+    war = state.get("wealth_at_retirement") or {}
+    if isinstance(war, dict) and war.get("breakdown"):
+        # Friendly labels for each source key in the breakdown.
+        _war_labels = {
+            "epf": "EPF",
+            "ppf": "PPF",
+            "nps": "NPS",
+            "fixed_deposits": "Fixed Deposits",
+            "real_estate": "Real Estate",
+            "sip": "SIP",
+            "freed_sip": "Freed EMI",
+            "lumpsum": "Lumpsum",
+        }
+        rows = []
+        for key, entry in (war.get("breakdown") or {}).items():
+            if not isinstance(entry, dict):
+                continue
+            try:
+                fv = float(entry.get("future_value", 0) or 0)
+            except (TypeError, ValueError):
+                fv = 0.0
+            if fv <= 0:
+                continue
+            rows.append(
+                {
+                    "key": key,
+                    "label": _war_labels.get(key, key.replace("_", " ").title()),
+                    "future_value": round(fv, 2),
+                    "rate": entry.get("rate", "-"),
+                }
+            )
+        if rows:
+            wealth_at_retirement_preview = {
+                "retirement_year": war.get("retirement_year"),
+                "total_corpus": war.get("total_corpus"),
+                "rows": rows,
+            }
+
     return {
         "client_name": name,
         "monthly_surplus": state.get("monthly_surplus"),
@@ -570,6 +610,7 @@ def summarize_plan_state(state: dict) -> dict:
         "education_targets_preview": education_targets_preview,
         "education_planning_preview": education_planning_preview,
         "term_insurance_requirement": term_insurance_requirement,
+        "wealth_at_retirement_preview": wealth_at_retirement_preview,
     }
 
 
