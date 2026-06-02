@@ -43,7 +43,11 @@ RUN npm run build
 # ---------------------------------------------------------------------------
 # Stage 2 — final runtime image (Python 3.11 + Node 20 + supervisord)
 # ---------------------------------------------------------------------------
-FROM python:3.11-slim-bookworm AS runtime
+# Python 3.12 (not 3.11): the planning code uses same-quote nesting inside
+# f-strings (e.g. f"...{goal["target_corpus"]}..."), which is only valid on 3.12+.
+# 3.12 is new enough for that syntax and old enough that every dependency
+# (langgraph, dspy-ai, litellm, pandas, pyarrow, azure-*) still supports it.
+FROM python:3.12-slim-bookworm AS runtime
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
