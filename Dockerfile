@@ -33,6 +33,11 @@ COPY components ./components
 COPY lib ./lib
 COPY public ./public
 COPY data ./data
+# app/api/copilotkit/route.ts builds its runtime at module load. With
+# LANGGRAPH_AGENT_URL set it takes the LangGraph path (no OpenAI client, no API key
+# needed); without it, the build tries to construct an OpenAI client and fails on a
+# missing OPENAI_API_KEY. This matches how the app runs (chat via the LangGraph agent).
+ENV LANGGRAPH_AGENT_URL=http://localhost:8000/copilotkit
 RUN npm run build
 
 # ---------------------------------------------------------------------------
