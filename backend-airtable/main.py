@@ -13,8 +13,10 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 _BACKEND_DIR = Path(__file__).resolve().parent
-if str(_BACKEND_DIR) not in sys.path:
-    sys.path.insert(0, str(_BACKEND_DIR))
+_BACKEND_SHARED = _BACKEND_DIR.parent / "backend"
+for _path in (_BACKEND_DIR, _BACKEND_SHARED):
+    if str(_path) not in sys.path:
+        sys.path.insert(0, str(_path))
 
 from stdio_utf8 import force_utf8_stdio  # noqa: E402
 

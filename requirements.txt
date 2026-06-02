@@ -1,5 +1,5 @@
 # Full local stack: Airtable API + Make plan + LangGraph agent + OCR policy service.
-# Use the SAME venv for: backend/airtable_main.py, agent/main.py, ocr-service/main.py
+# Use the SAME venv for: backend-airtable/main.py, agent/main.py, ocr-service/main.py
 -r backend/requirements.txt
 -r agent/requirements.txt
 -r ocr-service/requirements.txt
