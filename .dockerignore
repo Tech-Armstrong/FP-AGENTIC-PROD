@@ -1,0 +1,32 @@
+# Keep build context small and avoid baking secrets/local artifacts into the image.
+
+# Secrets — supply these at runtime via --env-file / Azure config, never in the image.
+.env
+.env.*
+**/.env
+**/.env.*
+
+# Node / Next
+node_modules
+.next
+npm-debug.log*
+
+# Python
+.venv
+venv
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+
+# Local dev / tooling
+.git
+.gitignore
+.vscode
+.idea
+*.log
+docs/plans
+
+# OS cruft
+.DS_Store
+Thumbs.db
