@@ -435,13 +435,6 @@ def airtable_record_to_client_data(fields: dict) -> dict:
     eq_val        = _f("direct_equity_current_value") + spouse_eq_val
     direct_equity = [{"portfolio_value": eq_val}]
 
-    if spouse_pf_val or spouse_pf_contrib:
-        epf_list.append({
-            "current_value":                          spouse_pf_val,
-            "employee_employer_contribution_monthly": spouse_pf_contrib,
-            "interest_rate":                          0.085,
-        })
-
     if spouse_fd_amt:
         fd_list.append({
             "name_of_bank":     "Spouse FD/Bond",
