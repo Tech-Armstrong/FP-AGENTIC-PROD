@@ -20,8 +20,11 @@ FROM node:20-bookworm-slim AS web-build
 WORKDIR /app
 
 # Install JS deps first (better layer caching).
+# --legacy-peer-deps: @tremor/react declares a React 18 peer dep but this project
+# runs React 19 (the dep is unused per AGENTS.md); without the flag npm aborts on
+# the peer-dependency conflict.
 COPY package.json package-lock.json* ./
-RUN npm ci
+RUN npm install --legacy-peer-deps
 
 # Copy the rest of the frontend source and build the production bundle.
 COPY tsconfig.json next.config.ts postcss.config.mjs ./
