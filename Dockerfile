@@ -4,7 +4,7 @@
 # Runs all four services in ONE container, supervised by supervisord:
 #   - Next.js frontend        : 3000  (the only port you expose publicly)
 #   - LangGraph chat agent     : 8000  (agent/main.py)
-#   - Airtable + planning API  : 8001  (backend/airtable_main.py)
+#   - Airtable + planning API  : 8001  (backend-airtable/main.py; helpers live in backend/)
 #   - OCR policy service       : 8010  (ocr-service/main.py)
 #
 # Inside the container the frontend reaches the Python services over localhost,
@@ -63,8 +63,12 @@ COPY ocr-service/requirements.txt ./ocr-service/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 # --- Application source for the Python services ---
+# The planning API entry point is backend-airtable/main.py, but it imports its
+# helpers (financial_plan_runner, rsu_market, stdio_utf8) and the RSU parquet from
+# a SIBLING backend/ folder, so BOTH folders must be present.
 COPY agent ./agent
 COPY backend ./backend
+COPY backend-airtable ./backend-airtable
 COPY ocr-service ./ocr-service
 COPY Financial_Planning ./Financial_Planning
 
