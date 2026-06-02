@@ -69,6 +69,16 @@ export type PlanSummary = {
     breakdown?: Record<string, number>;
     note?: string;
   } | null;
+  wealth_at_retirement_preview?: {
+    retirement_year?: number | string | null;
+    total_corpus?: number | null;
+    rows?: {
+      key?: string;
+      label?: string;
+      rate?: string | null;
+      future_value?: number | null;
+    }[];
+  } | null;
   spouse_preview?: Record<string, unknown> | null;
   marriage_goals_preview?: Record<string, unknown>[] | null;
   education_targets_preview?: Record<string, unknown>[] | null;
