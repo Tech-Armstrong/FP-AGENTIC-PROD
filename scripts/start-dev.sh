@@ -29,7 +29,7 @@ if [[ "$SKIP_INSTALL" == false ]]; then
     python3 -m venv .venv
   fi
 
-  step "Installing Python dependencies (backend + agent + OCR service)"
+  step "Installing Python dependencies (backend-airtable + agent + OCR service)"
   "$VENV_PIP" install -r requirements.txt
 
   if [[ ! -d node_modules ]]; then
@@ -61,7 +61,7 @@ step "Starting LangGraph agent on http://localhost:8000"
 ( cd agent && exec "$VENV_PYTHON" main.py ) &
 
 step "Starting Airtable API on http://localhost:8001"
-"$VENV_PYTHON" backend/airtable_main.py &
+( cd backend-airtable && exec "$VENV_PYTHON" main.py ) &
 
 step "Starting Next.js on http://localhost:3000"
 npm run dev &

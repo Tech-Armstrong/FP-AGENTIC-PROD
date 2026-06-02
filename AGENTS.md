@@ -14,7 +14,7 @@ natural-language Q&A over the dashboard data and the generated plan.
 
 - **:3000** — Next.js (UI + API proxy routes under `app/api/`).
 - **:8000** — chat agent (`agent/main.py`), AG-UI/CopilotKit ReAct loop.
-- **:8001** — financial data + planning API (`backend/airtable_main.py`); Airtable reads + `POST /financial-plan/run`.
+- **:8001** — financial data + planning API (`backend-airtable/main.py`); Airtable reads + `POST /financial-plan/run`.
 
 Two **independent** AI paths:
 1. **Chat** — Copilot sidebar → `/api/copilotkit` → chat agent on :8000 (or direct-Azure in Next).
@@ -31,7 +31,7 @@ Three terminals (full experience):
 # Terminal 1 — chat agent :8000
 cd agent && pip install -r requirements.txt && python main.py
 # Terminal 2 — financial API :8001 (Airtable + Make plan)
-pip install -r backend/requirements.txt && python backend/airtable_main.py
+pip install -r backend/requirements.txt && python backend-airtable/main.py
 # Terminal 3 — Next :3000
 npm install && npm run dev
 ```

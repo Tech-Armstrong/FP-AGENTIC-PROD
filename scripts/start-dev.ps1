@@ -37,7 +37,7 @@ function Ensure-Venv {
 if (-not $SkipInstall) {
     Ensure-Venv
 
-    Write-Step "Installing Python dependencies (backend + agent + OCR service)"
+    Write-Step "Installing Python dependencies (backend-airtable + agent + OCR service)"
     & $venvPython -m pip install -r requirements.txt
 
     if (-not (Test-Path "node_modules")) {
@@ -78,7 +78,7 @@ Write-Step "Starting LangGraph agent on http://localhost:8000"
 $processes += Start-ServiceWindow -Title "Agent :8000" -WorkingDirectory (Join-Path $RepoRoot "agent") -Command "& '$venvPython' main.py"
 
 Write-Step "Starting Airtable API on http://localhost:8001"
-$processes += Start-ServiceWindow -Title "Backend :8001" -WorkingDirectory $RepoRoot -Command "& '$venvPython' backend\airtable_main.py"
+$processes += Start-ServiceWindow -Title "Backend :8001" -WorkingDirectory (Join-Path $RepoRoot "backend-airtable") -Command "& '$venvPython' main.py"
 
 Write-Step "Starting Next.js on http://localhost:3000"
 $processes += Start-ServiceWindow -Title "Next.js :3000" -WorkingDirectory $RepoRoot -Command "npm run dev"
