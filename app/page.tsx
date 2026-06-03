@@ -24,7 +24,7 @@ function HomeContent() {
           title: "Data Assistant",
           initial:
             "Hello, I'm here to help you understand your data. How can I help?",
-          placeholder: "Ask about sales, trends, or metrics...",
+          placeholder: "Ask about Client's Input Data...",
         }}
       >
         <div className="min-h-screen bg-gray-50 flex flex-col dark:bg-gray-950">
