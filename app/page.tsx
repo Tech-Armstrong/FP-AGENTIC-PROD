@@ -24,7 +24,7 @@ function HomeContent() {
           title: "FP Assistant",
           initial:
             "Hello, I'm here to help you understand your data. How can I help?",
-          placeholder: "Ask about Client's Input Data",
+          placeholder: "Ask any questions about client's data..",
         }}
       >
         <div className="min-h-screen bg-gray-50 flex flex-col dark:bg-gray-950">
