@@ -21,10 +21,10 @@ function HomeContent() {
         instructions={prompt}
         AssistantMessage={CustomAssistantMessage}
         labels={{
-          title: "Data Assistant",
+          title: "FP Assistant",
           initial:
             "Hello, I'm here to help you understand your data. How can I help?",
-          placeholder: "Ask about sales, trends, or metrics...",
+          placeholder: "Ask any questions about client's data..",
         }}
       >
         <div className="min-h-screen bg-gray-50 flex flex-col dark:bg-gray-950">
