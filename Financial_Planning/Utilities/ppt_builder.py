@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from pptx.util import Inches
 from Financial_Planning.Utilities.utility_functions import convert_currency, analyze_asset_portfolio, sip_required
 from Financial_Planning.RSU.webscrapper import load_rsu_market_data
+from Financial_Planning.RSU.constants import get_rsu_growth_rate
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.abspath(os.path.join(current_dir, '../..'))
@@ -220,7 +221,10 @@ class PPTBuilder:
             continue
 
         amount = fund.get("monthly", fund.get("principal_used_today", fund.get("amount_used", 0)))
-        corpus_created += fund.get("fv_contribution", fund.get("amount_used", 0))
+        corpus_created += fund.get(
+            "fv_contribution",
+            fund.get("usable_esop_fv_at_goal", fund.get("amount_used", 0)),
+        )
 
         # Added '•' as the default bullet point and bolded the label
         if fund_type in ["lumpsum_from_liquid", "lumpsum_from_liquid_partial"]:
@@ -228,9 +232,13 @@ class PPTBuilder:
         elif fund_type == "ssy_funds":
             funding_lines.append(f"• {inv_label}: {convert_currency(fund.get('amount_used', 0))}")
         elif fund_type == "esop_funds":
-            funding_lines.append(f"• {inv_label}: {convert_currency(fund.get('amount_used', 0))}")
+            funding_lines.append(
+                f"• {inv_label}: {convert_currency(fund.get('fv_contribution', fund.get('amount_used', 0)))}"
+            )
         elif fund_type == "rsu_funds":
-            funding_lines.append(f"• {inv_label}: {convert_currency(fund.get('amount_used', 0))}")
+            funding_lines.append(
+                f"• {inv_label}: {convert_currency(fund.get('fv_contribution', fund.get('amount_used', 0)))}"
+            )
         else:
             funding_lines.append(f"• {inv_label}: {convert_currency(amount)}/month")
 
@@ -1465,10 +1473,10 @@ class PPTBuilder:
                         lumpsum_fv_retirement += fv
 
         # ── 7b. Leftover RSU (total usable RSU − consumed by goals, grown to retirement) ──
-        RSU_GROWTH_RATE = 0.10
+        RSU_GROWTH_RATE = get_rsu_growth_rate(invest_detail)
         RSU_USABLE_CAP  = 0.60
         rsu_fv = 0.0
-        rsu_data = client_data.get('investment_details', {}).get('rsu', [])
+        rsu_data = invest_detail.get('rsu', [])
         if rsu_data:
             try:
                 market_df = load_rsu_market_data()
@@ -1909,7 +1917,12 @@ class PPTBuilder:
                 for fund in goal.get('funded_from', []):
                     if fund.get('type') == 'esop_funds':
                         esop_goal_lines.append(
-                            (goal['goal_name'], convert_currency(fund.get('amount_used', 0)))
+                            (
+                                goal['goal_name'],
+                                convert_currency(
+                                    fund.get('fv_contribution', fund.get('amount_used', 0))
+                                ),
+                            )
                         )
                         break
 

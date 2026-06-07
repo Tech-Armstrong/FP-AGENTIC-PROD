@@ -109,6 +109,7 @@ class PlanOverrides(BaseModel):
     ppf_rate: float | None = None
     nps_rate: float | None = None
     mf_expected_return: float | None = None
+    rsu_growth_rate: float | None = None
 
 
 # Backward-compatible alias
@@ -642,6 +643,10 @@ def apply_plan_overrides(
         rate = _normalize_rate(overrides.mf_expected_return)
         for item in (payload.get("investment_details") or {}).get("mutual_funds") or []:
             item["expected_annual_return"] = rate
+    if overrides.rsu_growth_rate is not None:
+        rate = _normalize_rate(overrides.rsu_growth_rate)
+        inv = payload.setdefault("investment_details", {})
+        inv["rsu_growth_rate"] = rate
     return payload
 
 

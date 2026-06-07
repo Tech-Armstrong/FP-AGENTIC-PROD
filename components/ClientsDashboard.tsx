@@ -11,6 +11,7 @@ import {
   type PlanTab,
   type PlanSummary,
   type PlanOverrides,
+  type RsuPortfolioPreviewEntry,
   emptyAppliedRates,
 } from "./FinancialPlanPanel";
 import { DashboardSidebar } from "./DashboardSidebar";
@@ -20,6 +21,11 @@ import { MarriageGoalsSection, type MarriageGoalRow } from "./MarriageGoalsSecti
 import { EducationPlanningSection } from "./EducationPlanningSection";
 import { buildEducationPlanningBlocks, type EducationPlanningPreviewRow } from "@/lib/educationPlanningView";
 import type { EducationTargetYears } from "@/lib/educationTargetYear";
+import {
+  DEFAULT_RSU_GROWTH_RATE,
+  projectRsuVestingTranches,
+  sumProjectedRsuValue,
+} from "@/lib/rsuProjection";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -167,6 +173,15 @@ function buildPlanChangeEntries(
       `MF return ${formatRateDisplay(original.mfExpectedReturn)} → ${formatRateDisplay(applied.mfExpectedReturn)}`,
     );
   }
+  if (
+    original.rsuGrowth != null &&
+    applied.rsuGrowth != null &&
+    !rateDecimalsMatch(original.rsuGrowth, applied.rsuGrowth)
+  ) {
+    entries.push(
+      `RSU growth ${formatRateDisplay(original.rsuGrowth)} → ${formatRateDisplay(applied.rsuGrowth)}`,
+    );
+  }
   return entries;
 }
 
@@ -201,12 +216,14 @@ function syncEditableFromApplied(applied: AppliedRates): {
   ppf: string;
   nps: string;
   mf: string;
+  rsu: string;
 } {
   return {
     epf: applied.epf != null ? decimalToPctInput(applied.epf) : "",
     ppf: applied.ppf != null ? decimalToPctInput(applied.ppf) : "",
     nps: applied.nps != null ? decimalToPctInput(applied.nps) : "",
     mf: applied.mfExpectedReturn != null ? decimalToPctInput(applied.mfExpectedReturn) : "",
+    rsu: applied.rsuGrowth != null ? decimalToPctInput(applied.rsuGrowth) : "",
   };
 }
 
@@ -216,6 +233,7 @@ function buildPlanOverridesForRun(
     ppf: string;
     nps: string;
     mf: string;
+    rsu: string;
   },
   baselines: AppliedRates,
 ): PlanOverrides | null {
@@ -239,6 +257,14 @@ function buildPlanOverridesForRun(
     !rateDecimalsMatch(mf, baselines.mfExpectedReturn)
   ) {
     overrides.mf_expected_return = mf;
+  }
+  const rsu = parseRateToDecimal(edited.rsu);
+  if (
+    rsu !== null &&
+    baselines.rsuGrowth != null &&
+    !rateDecimalsMatch(rsu, baselines.rsuGrowth)
+  ) {
+    overrides.rsu_growth_rate = rsu;
   }
   return Object.keys(overrides).length > 0 ? overrides : null;
 }
@@ -271,14 +297,6 @@ type RsuMarketMeta = {
   parquet_row_count?: number;
   parquet_exists?: boolean;
 };
-
-function trancheValueInr(
-  priceUsd: number,
-  usdToInr: number,
-  shares: number,
-): number {
-  return Math.round(priceUsd * usdToInr * shares * 100) / 100;
-}
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -434,32 +452,121 @@ function DonutChart({ slices }: { slices: { label: string; value: number; color:
   );
 }
 
+function findPlanRsuEntry(
+  planPortfolio: RsuPortfolioPreviewEntry[] | null | undefined,
+  ticker: string | undefined,
+  companyName: string,
+): RsuPortfolioPreviewEntry | undefined {
+  if (!planPortfolio?.length) return undefined;
+  const t = ticker?.trim().toUpperCase();
+  return planPortfolio.find(
+    (p) =>
+      (t && p.ticker?.trim().toUpperCase() === t) ||
+      (p.company_name &&
+        p.company_name.trim().toLowerCase() === companyName.trim().toLowerCase()),
+  );
+}
+
 // ── RSU accordion item ────────────────────────────────────────────────────────
 function RsuCard({
   rsu,
   quote,
+  growthRateDecimal,
+  planEntry,
 }: {
   rsu: ClientDetail["client_data"]["investment_details"]["rsu"][0];
   quote?: RsuTickerPrice;
+  growthRateDecimal: number;
+  planEntry?: RsuPortfolioPreviewEntry;
 }) {
   const [open, setOpen] = useState(false);
-  const total = rsu.vesting_schedule.reduce((s, v) => s + (v.no_shares || 0), 0);
-  const totalTranche = quote
-    ? rsu.vesting_schedule.reduce(
-        (s, v) =>
-          s +
-          trancheValueInr(
-            quote.price_usd,
-            quote.usd_to_inr_rate,
-            v.no_shares || 0,
-          ),
-        0,
-      )
-    : null;
+  const totalShares = rsu.vesting_schedule.reduce(
+    (s, v) => s + (v.no_shares || 0),
+    0,
+  );
+  const usePlanTranches =
+    planEntry?.tranches != null && planEntry.tranches.length > 0;
+
+  const projected =
+    !usePlanTranches && quote != null
+      ? projectRsuVestingTranches(
+          rsu.vesting_schedule,
+          {
+            price_usd: quote.price_usd,
+            usd_to_inr_rate: quote.usd_to_inr_rate,
+          },
+          growthRateDecimal,
+        )
+      : [];
+  const projectedByYear = new Map(projected.map((p) => [String(p.year), p]));
+
+  const spotUsd = usePlanTranches
+    ? planEntry?.price_usd_today
+    : quote?.price_usd;
+  const fxRate = usePlanTranches
+    ? planEntry?.usd_to_inr_rate
+    : quote?.usd_to_inr_rate;
+  const totalRsuValue = usePlanTranches
+    ? planEntry?.total_rsu_value_inr
+    : projected.length > 0
+      ? sumProjectedRsuValue(projected)
+      : null;
+  const availableToday = usePlanTranches
+    ? planEntry?.amount_available_today
+    : projected[0]?.trancheValueInr ?? null;
+
+  const vestingByYear = new Map(
+    rsu.vesting_schedule.map((v) => [String(v.year), v]),
+  );
+
+  const tableRows = usePlanTranches
+    ? (planEntry!.tranches ?? []).map((t) => {
+        const yearKey = String(t.year);
+        const vest = vestingByYear.get(yearKey);
+        const shares = t.no_shares ?? vest?.no_shares ?? 0;
+        const priceInr = t.price_per_share_inr;
+        const fx = fxRate ?? 0;
+        const priceUsd =
+          priceInr != null && fx > 0 ? priceInr / fx : null;
+        return {
+          Year: t.year,
+          "Vesting %":
+            vest?.vesting != null
+              ? `${(vest.vesting * 100).toFixed(0)}%`
+              : "—",
+          Shares: shares ? shares.toLocaleString("en-IN") : "—",
+          "Price (INR/share)":
+            priceInr != null
+              ? `₹${priceInr.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+              : "—",
+          "Price (USD)":
+            priceUsd != null ? `$${priceUsd.toFixed(2)}` : "—",
+          "FX (USD→INR)": fxRate != null ? fxRate.toFixed(4) : "—",
+          "Tranche value":
+            t.tranche_value_inr != null ? inr(t.tranche_value_inr) : "—",
+        };
+      })
+    : rsu.vesting_schedule.map((v) => {
+        const shares = v.no_shares || 0;
+        const row = projectedByYear.get(String(v.year));
+        return {
+          Year: v.year,
+          "Vesting %":
+            v.vesting != null ? `${(v.vesting * 100).toFixed(0)}%` : "—",
+          Shares: shares ? shares.toLocaleString("en-IN") : "—",
+          "Price (INR/share)": row
+            ? `₹${row.pricePerShareInr.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+            : "—",
+          "Price (USD)": row ? `$${row.priceUsd.toFixed(2)}` : "—",
+          "FX (USD→INR)": row ? row.usdToInr.toFixed(4) : "—",
+          "Tranche value": row ? inr(row.trancheValueInr) : "—",
+        };
+      });
+
   return (
     <div className="mb-2 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
       <button
-        onClick={() => setOpen(o => !o)}
+        onClick={() => setOpen((o) => !o)}
         className="flex w-full items-center justify-between bg-blue-50 px-4 py-3 text-left hover:bg-blue-100 dark:bg-blue-950/40 dark:hover:bg-blue-950/60"
       >
         <span className="text-sm font-bold text-blue-900 dark:text-blue-200">
@@ -467,20 +574,35 @@ function RsuCard({
           {rsu.ticker && (
             <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
               ({rsu.ticker})
-              {quote && (
+              {spotUsd != null && (
                 <span className="ml-1 text-gray-600 dark:text-gray-300">
-                  · ${quote.price_usd.toFixed(2)} · ₹
-                  {quote.price_inr.toLocaleString("en-IN")}/share
+                  · ${spotUsd.toFixed(2)}
+                  {fxRate != null && spotUsd != null && (
+                    <span>
+                      {" "}
+                      · ₹
+                      {(spotUsd * fxRate).toLocaleString("en-IN", {
+                        maximumFractionDigits: 2,
+                      })}
+                      /share
+                    </span>
+                  )}
                 </span>
               )}
             </span>
           )}
         </span>
         <span className="text-right text-xs text-gray-500 dark:text-gray-400">
-          {total.toLocaleString("en-IN")} shares · {rsu.vesting_schedule.length} tranches
-          {totalTranche != null && (
+          {totalShares.toLocaleString("en-IN")} shares · {rsu.vesting_schedule.length}{" "}
+          tranches
+          {availableToday != null && (
+            <span className="block text-gray-600 dark:text-gray-300">
+              Available today: {inr(availableToday)}
+            </span>
+          )}
+          {totalRsuValue != null && (
             <span className="block font-semibold text-green-700 dark:text-green-400">
-              Total: {inr(totalTranche)}
+              Total RSU value: {inr(totalRsuValue)}
             </span>
           )}{" "}
           {open ? "▲" : "▼"}
@@ -488,38 +610,29 @@ function RsuCard({
       </button>
       {open && (
         <div className="bg-gray-50 px-4 py-3 dark:bg-gray-900/50">
-          {quote && (
-            <p className="mb-2 text-[10px] text-gray-500 dark:text-gray-400">
-              FX 1 USD = ₹{quote.usd_to_inr_rate} (as of {quote.scrape_date}) · Tranche
-              value = price × FX × shares
+          {usePlanTranches ? (
+            <p className="mb-2 rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-200">
+              Tranche values from last Make plan run
+              {spotUsd != null && fxRate != null && (
+                <span>
+                  {" "}
+                  (spot ${spotUsd.toFixed(2)}, USD/INR {fxRate.toFixed(4)}, growth{" "}
+                  {(growthRateDecimal * 100).toFixed(2)}% between vest years)
+                </span>
+              )}
+              .
             </p>
+          ) : (
+            quote && (
+              <p className="mb-2 text-[10px] text-gray-500 dark:text-gray-400">
+                Live market estimate — spot ${quote.price_usd.toFixed(2)}, USD/INR{" "}
+                {quote.usd_to_inr_rate.toFixed(4)}, growth{" "}
+                {(growthRateDecimal * 100).toFixed(2)}% p.a. between vest years (FX
+                held flat). Run Make plan to lock values used in goal funding.
+              </p>
+            )
           )}
-          <DataTable
-            rows={rsu.vesting_schedule.map((v) => {
-              const shares = v.no_shares || 0;
-              const tranche =
-                quote && shares
-                  ? trancheValueInr(
-                      quote.price_usd,
-                      quote.usd_to_inr_rate,
-                      shares,
-                    )
-                  : null;
-              return {
-                Year: v.year,
-                "Vesting %":
-                  v.vesting != null
-                    ? `${(v.vesting * 100).toFixed(0)}%`
-                    : "—",
-                Shares: shares ? shares.toLocaleString("en-IN") : "—",
-                "Price (USD)": quote ? `$${quote.price_usd.toFixed(2)}` : "—",
-                "FX (USD→INR)": quote
-                  ? quote.usd_to_inr_rate.toFixed(2)
-                  : "—",
-                "Tranche value": tranche != null ? inr(tranche) : "—",
-              };
-            })}
-          />
+          <DataTable rows={tableRows} />
         </div>
       )}
     </div>
@@ -528,9 +641,21 @@ function RsuCard({
 
 function RsuSection({
   rsus,
+  growthRatePct,
+  growthBaselineDecimal,
+  onGrowthRateChange,
+  onGrowthRateReset,
+  planRsuPortfolio,
 }: {
   rsus: ClientDetail["client_data"]["investment_details"]["rsu"];
+  growthRatePct: string;
+  growthBaselineDecimal: number;
+  onGrowthRateChange: (v: string) => void;
+  onGrowthRateReset: () => void;
+  planRsuPortfolio?: RsuPortfolioPreviewEntry[] | null;
 }) {
+  const growthRateDecimal =
+    parseRateToDecimal(growthRatePct) ?? growthBaselineDecimal;
   const [prices, setPrices] = useState<Record<string, RsuTickerPrice>>({});
   const [meta, setMeta] = useState<RsuMarketMeta | null>(null);
   const [loading, setLoading] = useState(false);
@@ -620,6 +745,42 @@ function RsuSection({
 
   return (
     <>
+      <div className="mb-3 flex flex-wrap items-end gap-3">
+        <label className="flex flex-col gap-0.5 text-xs text-gray-600 dark:text-gray-400">
+          <span className="font-semibold">Annual RSU price growth (%)</span>
+          <div className="flex items-center gap-1">
+            <input
+              type="text"
+              inputMode="decimal"
+              value={growthRatePct}
+              onChange={(e) => onGrowthRateChange(e.target.value)}
+              placeholder="10"
+              title="Annual share-price growth between vest years (e.g. 10 for 10%)"
+              className="w-16 rounded border border-gray-200 bg-white px-2 py-1 text-xs font-semibold text-gray-800 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+            />
+            <span className="text-[10px]">%</span>
+            {parseRateToDecimal(growthRatePct) != null &&
+              !rateDecimalsMatch(
+                parseRateToDecimal(growthRatePct)!,
+                growthBaselineDecimal,
+              ) && (
+                <button
+                  type="button"
+                  onClick={onGrowthRateReset}
+                  className="text-[10px] font-semibold text-amber-700 hover:underline dark:text-amber-400"
+                  title="Reset to default (10%)"
+                >
+                  ↺
+                </button>
+              )}
+          </div>
+        </label>
+        <p className="max-w-md text-[10px] text-gray-500 dark:text-gray-400">
+          Future tranche prices compound from the first vest year; FX from market
+          data is held flat. Make plan sends this rate when it differs from 10%.
+          After Make plan, tranche tables use the workflow values.
+        </p>
+      </div>
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
         <p className="text-[10px] text-gray-500 dark:text-gray-400">
           {meta?.scrape_date
@@ -661,6 +822,12 @@ function RsuSection({
           key={i}
           rsu={r}
           quote={r.ticker ? prices[r.ticker.trim().toUpperCase()] : undefined}
+          growthRateDecimal={growthRateDecimal}
+          planEntry={findPlanRsuEntry(
+            planRsuPortfolio,
+            r.ticker,
+            r.company_name,
+          )}
         />
       ))}
     </>
@@ -683,6 +850,9 @@ export function ClientsDashboard() {
   const [ppfRatePct, setPpfRatePct] = useState("");
   const [npsRatePct, setNpsRatePct] = useState("");
   const [mfRatePct, setMfRatePct] = useState("");
+  const [rsuGrowthRatePct, setRsuGrowthRatePct] = useState(
+    decimalToPctInput(DEFAULT_RSU_GROWTH_RATE),
+  );
   const [originalRates, setOriginalRates] = useState<AppliedRates>(emptyAppliedRates());
   const [educationTargets, setEducationTargets] =
     useState<Record<string, { ug?: string; pg?: string }>>({});
@@ -696,6 +866,7 @@ export function ClientsDashboard() {
       ppf: ppfRatePct,
       nps: npsRatePct,
       mf: mfRatePct,
+      rsu: rsuGrowthRatePct,
     },
     originalRates,
   );
@@ -733,6 +904,7 @@ export function ClientsDashboard() {
       ppf,
       nps,
       mfExpectedReturn: mf,
+      rsuGrowth: DEFAULT_RSU_GROWTH_RATE,
     };
     setOriginalRates(originals);
     const synced = syncEditableFromApplied(originals);
@@ -740,6 +912,7 @@ export function ClientsDashboard() {
     setPpfRatePct(synced.ppf);
     setNpsRatePct(synced.nps);
     setMfRatePct(synced.mf);
+    setRsuGrowthRatePct(synced.rsu);
   }, [detail?.record_id]);
 
   /** On tab switch, reset editable cells to that tab's frozen appliedRates (not live edits). */
@@ -750,6 +923,7 @@ export function ClientsDashboard() {
     setPpfRatePct(synced.ppf);
     setNpsRatePct(synced.nps);
     setMfRatePct(synced.mf);
+    setRsuGrowthRatePct(synced.rsu);
   }, [activePlanTabId, activePlanTab]);
 
   const handlePlanComplete = (payload: {
@@ -1182,7 +1356,22 @@ export function ClientsDashboard() {
 
                     {(inv?.rsu ?? []).length > 0 && <>
                       <SectionLabel icon="⭐" text="RSUs" />
-                      <RsuSection rsus={inv!.rsu} />
+                      <RsuSection
+                        rsus={inv!.rsu}
+                        growthRatePct={rsuGrowthRatePct}
+                        growthBaselineDecimal={
+                          originalRates.rsuGrowth ?? DEFAULT_RSU_GROWTH_RATE
+                        }
+                        onGrowthRateChange={setRsuGrowthRatePct}
+                        onGrowthRateReset={() =>
+                          setRsuGrowthRatePct(
+                            decimalToPctInput(
+                              originalRates.rsuGrowth ?? DEFAULT_RSU_GROWTH_RATE,
+                            ),
+                          )
+                        }
+                        planRsuPortfolio={activePlanSummary?.rsu_portfolio_preview}
+                      />
                     </>}
 
                     {(inv?.ulips ?? []).length > 0 && <>

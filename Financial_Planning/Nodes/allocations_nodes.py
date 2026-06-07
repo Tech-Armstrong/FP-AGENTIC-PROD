@@ -21,6 +21,38 @@ import pickle
 import os
 import sys  
 from Financial_Planning.RSU.webscrapper import load_rsu_market_data
+from Financial_Planning.RSU.constants import get_rsu_growth_rate
+
+
+def rsu_years_utilized_for_draw(
+    tranche_details: list,
+    goal_year: int,
+    draw_start: float,
+    draw_amount: float,
+    usable_cap: float = 0.6,
+) -> list[int]:
+    """
+    FIFO: vest years whose capped tranche slices overlap [draw_start, draw_start + draw_amount).
+    """
+    if draw_amount <= 0:
+        return []
+    draw_end = draw_start + draw_amount
+    pos = 0.0
+    years: list[int] = []
+    sorted_tranches = sorted(
+        (t for t in tranche_details if int(t["year"]) <= goal_year),
+        key=lambda t: int(t["year"]),
+    )
+    for tranche in sorted_tranches:
+        vest_year = int(tranche["year"])
+        slice_usable = round(float(tranche["tranche_value_inr"]) * usable_cap, 2)
+        slice_start = pos
+        slice_end = pos + slice_usable
+        if slice_end > draw_start and slice_start < draw_end:
+            years.append(vest_year)
+        pos = slice_end
+    return years
+
 
 def calculate_fv_after_one_year(funded_from: list, r_annual: float = 0.08) -> float:
     """
@@ -704,19 +736,24 @@ def plan_goals(state: ClientState):
             if amount_to_apply <= 0:
                 continue
 
+            pv_of_used = amount_to_apply / ((1 + ESOP_GROWTH_RATE) ** years_to_goal)
             goal['corpus_gap'] = round(goal['corpus_gap'] - amount_to_apply)
             goal['funded_from'].append({
                 'type': 'esop_funds',
                 'source': 'Vested ESOPs',
+                'from_year': current_year,
+                'to_year': goal['target_year'],
                 'vested_value_today': round(vested_esop_value),
                 'usable_esop_today': round(vested_esop_value * ESOP_USABLE_CAP),
                 'usable_esop_fv_at_goal': usable_esop_fv,
-                'amount_used': round(vested_esop_value * ESOP_USABLE_CAP),
+                'pv_allocated_today': round(pv_of_used),
+                'fv_contribution': round(amount_to_apply),
+                'amount_used': round(amount_to_apply),
+                'rate': f"{ESOP_GROWTH_RATE * 100:.1f}%",
                 'growth_rate': ESOP_GROWTH_RATE,
                 'years_to_goal': years_to_goal
             })
 
-            pv_of_used = amount_to_apply / ((1 + ESOP_GROWTH_RATE) ** years_to_goal)
             esop_remaining_usable = max(0, esop_remaining_usable - pv_of_used)
 
             if goal['corpus_gap'] <= 0.1 * goal['target_corpus']:
@@ -742,10 +779,11 @@ def plan_goals(state: ClientState):
             print(f"ESOP applied {round(amount_to_apply)} to {goal['goal_name']}. Remaining usable ESOP (PV): {round(esop_remaining_usable)}")
 
     # ======================== RSU PORTFOLIO VALUATION & GOAL FUNDING ========================
-    RSU_GROWTH_RATE = 0.10
+    investment_details = state['client_data'].get('investment_details', {})
+    RSU_GROWTH_RATE = get_rsu_growth_rate(investment_details)
     RSU_USABLE_CAP  = 0.60
 
-    rsu_data = state['client_data'].get('investment_details', {}).get('rsu', [])
+    rsu_data = investment_details.get('rsu', [])
     rsu_portfolio = []
 
     if rsu_data:
@@ -846,6 +884,16 @@ def plan_goals(state: ClientState):
                     if amount_to_apply <= 0:
                         continue
 
+                    draw_start = rsu_consumed
+                    years_used = rsu_years_utilized_for_draw(
+                        tranche_details,
+                        goal_year,
+                        draw_start,
+                        amount_to_apply,
+                        RSU_USABLE_CAP,
+                    )
+                    years_label = ", ".join(str(y) for y in years_used) if years_used else None
+
                     goal['corpus_gap'] = round(goal['corpus_gap'] - amount_to_apply)
                     rsu_consumed = round(rsu_consumed + amount_to_apply, 2)
                     rsu_used_tracker[goal['goal_name']] = round(amount_to_apply, 2)
@@ -857,6 +905,10 @@ def plan_goals(state: ClientState):
                         'amount_available_today': round(amount_available_today),
                         'cumulative_usable_by_goal_year': round(total_usable_by_goal_year),
                         'amount_used': round(amount_to_apply),
+                        'fv_contribution': round(amount_to_apply),
+                        'rsu_years_utilized': years_used,
+                        'rsu_years_utilized_label': years_label,
+                        'rate': f"{RSU_GROWTH_RATE * 100:.1f}%",
                         'rsu_consumed_so_far': round(rsu_consumed),
                         'years_to_goal': years_to_goal
                     })

@@ -298,6 +298,8 @@ Airtable record
 | Concurrency | No locking; two simultaneous Make plan runs for same client = two independent invokes, last UI write wins |
 | Stale plan in chat | Readable still shows old `plan_summary` if Airtable data changed but Make plan not re-run |
 | RSU prices | `backend/data/rsu_market_data.parquet` (optional); refresh via `/rsu-refresh` — used in allocation nodes when RSU present |
+| RSU growth | Dashboard RSU section: editable annual share-price growth (default 10%); tranche INR/USD compound between vest years (`lib/rsuProjection.ts`, same math as `allocations_nodes`). **Make plan** accepts `overrides.rsu_growth_rate` → `investment_details.rsu_growth_rate`. Plan API returns `summary.rsu_portfolio_preview`; after Make plan the RSU accordion table prefers those tranches over live market projection. |
+| ESOP / RSU goal funding | `plan_goals` ESOP/RSU `funded_from` include `fv_contribution` (closes `corpus_gap`), `rate`, and ESOP `from_year`/`to_year` (growth horizon). ESOP **Amount** = `pv_allocated_today`; **FV** = goal-year credit. RSU **From/To** = em dash; plan goal card shows **RSU utilized: 2026, 2027** from FIFO `rsu_years_utilized` (years actually drawn, not full vest range). Per-tranche prices in RSU dashboard / `rsu_portfolio_preview`. |
 
 ---
 
@@ -427,7 +429,7 @@ Repo-root `.env` is loaded by `agent/main.py`, `backend/airtable_main.py`, and p
 | `POST` | `/api/copilotkit` | CopilotKit run payload | SSE (LangGraph) or adapter stream | `:8000` or Azure |
 | `GET` | `/api/airtable/clients` | — | `{ clients: [{ record_id, name }] }` | `GET :8001/clients` |
 | `GET` | `/api/airtable/clients/[id]` | — | `{ record_id, client_data: {...} }` | `GET :8001/clients/{id}` |
-| `POST` | `/api/financial-plan/run` | `{ record_id: string, education_targets?: [{ name_of_kid, ug_target_amount?, pg_target_amount? }] }` | `{ ok, summary }` or `{ detail }` | `POST :8001/financial-plan/run` |
+| `POST` | `/api/financial-plan/run` | `{ record_id, education_targets?, overrides?: { epf_rate?, ppf_rate?, nps_rate?, mf_expected_return?, rsu_growth_rate? } }` | `{ ok, summary }` or `{ detail }` | `POST :8001/financial-plan/run` |
 | `GET` | `/api/rsu-market-data` | — | RSU payload JSON | `GET :8001/rsu-market-data` |
 | `POST` | `/api/rsu-refresh` | optional tickers | refresh result | `POST :8001/rsu-refresh` |
 | `GET` | `/api/rsu/market-data` | `?ticker=` | legacy | `GET :8001/rsu/market-data` |
@@ -447,7 +449,7 @@ Repo-root `.env` is loaded by `agent/main.py`, `backend/airtable_main.py`, and p
 | `GET` | `/health` | — | `{ status: "ok" }` |
 | `GET` | `/clients` | — | `{ clients: [...] }` |
 | `GET` | `/clients/{record_id}` | — | `{ record_id, client_data }` |
-| `POST` | `/financial-plan/run` | `{ record_id, education_targets?: [{ name_of_kid, ug_target_amount?, pg_target_amount? }] }` | `{ ok: true, summary: {...} }` or HTTP error |
+| `POST` | `/financial-plan/run` | `{ record_id, education_targets?, overrides?: PlanOverrides }` (`rsu_growth_rate` → `investment_details.rsu_growth_rate`) | `{ ok: true, summary: {...} }` or HTTP error |
 | `GET` | `/rsu-market-data` | — | parquet-derived JSON |
 | `POST` | `/rsu-refresh` | `{ tickers?: string[] }` | refresh metadata |
 | `GET` | `/rsu/market-data` | query `ticker` | legacy |

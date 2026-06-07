@@ -84,6 +84,26 @@ export type PlanSummary = {
   education_targets_preview?: Record<string, unknown>[] | null;
   education_planning_preview?: Record<string, unknown>[] | null;
   real_estate_preview?: Record<string, unknown>[] | null;
+  rsu_portfolio_preview?: RsuPortfolioPreviewEntry[] | null;
+};
+
+export type RsuPlanTranche = {
+  year?: number | string;
+  no_shares?: number;
+  price_per_share_inr?: number;
+  tranche_value_inr?: number;
+};
+
+export type RsuPortfolioPreviewEntry = {
+  company_name?: string;
+  ticker?: string;
+  price_usd_today?: number;
+  usd_to_inr_rate?: number;
+  amount_available_today?: number;
+  total_rsu_value_inr?: number;
+  tranches?: RsuPlanTranche[];
+  rsu_total_consumed?: number;
+  rsu_remaining?: number;
 };
 
 export type PlanResponse = { ok?: boolean; summary?: PlanSummary; detail?: string };
@@ -93,6 +113,7 @@ export type PlanOverrides = {
   ppf_rate?: number;
   nps_rate?: number;
   mf_expected_return?: number;
+  rsu_growth_rate?: number;
 };
 
 /** @deprecated Use PlanOverrides — kept for existing imports */
@@ -104,6 +125,7 @@ export type AppliedRates = {
   ppf: number | null;
   nps: number | null;
   mfExpectedReturn: number | null;
+  rsuGrowth: number | null;
 };
 
 export function emptyAppliedRates(): AppliedRates {
@@ -112,6 +134,7 @@ export function emptyAppliedRates(): AppliedRates {
     ppf: null,
     nps: null,
     mfExpectedReturn: null,
+    rsuGrowth: null,
   };
 }
 
@@ -127,6 +150,7 @@ export function resolveAppliedRates(
     ppf: overrides.ppf_rate ?? original.ppf,
     nps: overrides.nps_rate ?? original.nps,
     mfExpectedReturn: overrides.mf_expected_return ?? original.mfExpectedReturn,
+    rsuGrowth: overrides.rsu_growth_rate ?? original.rsuGrowth,
   };
 }
 
@@ -298,6 +322,21 @@ function KvGrid({
   );
 }
 
+function getRsuYearsUtilizedLabel(
+  rows: FundedFromRow[] | undefined,
+): string | null {
+  if (!rows?.length) return null;
+  const rsu = rows.find((r) => String(r.type) === "rsu_funds");
+  if (!rsu) return null;
+  const label = rsu.rsu_years_utilized_label as string | undefined;
+  if (label?.trim()) return label.trim();
+  const years = rsu.rsu_years_utilized;
+  if (Array.isArray(years) && years.length > 0) {
+    return years.map(String).join(", ");
+  }
+  return null;
+}
+
 function FundingTable({ rows }: { rows: FundedFromRow[] }) {
   if (!rows.length) {
     return (
@@ -366,10 +405,13 @@ function FundingTable({ rows }: { rows: FundedFromRow[] }) {
             const toY = f.to_year as number | string | undefined;
             const rate = f.rate as string | undefined;
             const source = f.source as string | undefined;
+            const isRsu = rawType === "rsu_funds";
 
             let amtCell: React.ReactNode = "—";
             if (rawType === "rsu_funds" && amountUsed != null)
               amtCell = fmtInr(amountUsed);
+            else if (rawType === "ESOP" && amount != null)
+              amtCell = fmtInr(amount);
             else if (monthly != null) amtCell = `${fmtInr(monthly)}/mo`;
             else if (amount != null) amtCell = fmtInr(amount);
             else if (principal != null) amtCell = fmtInr(principal);
@@ -386,15 +428,17 @@ function FundingTable({ rows }: { rows: FundedFromRow[] }) {
                     {display}
                   </span>
                   {source ? (
-                    <div className="mt-1 text-[0.78rem] text-slate-500 dark:text-slate-400">{source}</div>
+                    <div className="mt-1 text-[0.78rem] text-slate-500 dark:text-slate-400">
+                      {source}
+                    </div>
                   ) : null}
                 </td>
                 <td className="whitespace-nowrap px-2.5 py-1.5">{amtCell}</td>
                 <td className="whitespace-nowrap px-2.5 py-1.5">
-                  {fromY != null && fromY !== "" ? String(fromY) : "—"}
+                  {isRsu ? "—" : fromY != null && fromY !== "" ? String(fromY) : "—"}
                 </td>
                 <td className="whitespace-nowrap px-2.5 py-1.5">
-                  {toY != null && toY !== "" ? String(toY) : "—"}
+                  {isRsu ? "—" : toY != null && toY !== "" ? String(toY) : "—"}
                 </td>
                 <td className="whitespace-nowrap px-2.5 py-1.5">
                   {rate != null ? String(rate) : "—"}
@@ -1078,6 +1122,9 @@ export function FinancialPlanPanel({
                       const status = deriveGoalStatus(g);
                       const gap = Number(g.corpus_gap ?? 0);
                       const partial = status === "partial_funded" || gap > 0;
+                      const rsuYearsLabel = getRsuYearsUtilizedLabel(
+                        g.funded_from_preview,
+                      );
                       return (
                         <div
                           key={`${g.goal_name}-${idx}`}
@@ -1142,6 +1189,14 @@ export function FinancialPlanPanel({
                               </>
                             ) : null}
                           </div>
+                          {rsuYearsLabel ? (
+                            <p className="mb-2.5 text-[0.82rem] text-slate-600 dark:text-slate-300">
+                              RSU utilized:{" "}
+                              <strong className="text-slate-800 dark:text-slate-200">
+                                {rsuYearsLabel}
+                              </strong>
+                            </p>
+                          ) : null}
                           {g.funded_from_preview && g.funded_from_preview.length > 0 ? (
                             <div className="mt-2">
                               <FundingTable rows={g.funded_from_preview} />

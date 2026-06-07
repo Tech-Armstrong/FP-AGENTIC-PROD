@@ -441,8 +441,11 @@ def summarize_plan_state(state: dict) -> dict:
                 out.append(
                     {
                         "type": "ESOP",
-                        "amount": f.get("amount_used"),
-                        "fv": f.get("fv_contribution"),
+                        "amount": f.get("pv_allocated_today", f.get("usable_esop_today")),
+                        "from_year": f.get("from_year"),
+                        "to_year": f.get("to_year"),
+                        "rate": f.get("rate"),
+                        "fv": f.get("fv_contribution", f.get("usable_esop_fv_at_goal")),
                     }
                 )
             elif ft == "rsu_funds":
@@ -452,6 +455,10 @@ def summarize_plan_state(state: dict) -> dict:
                         "source": f.get("source"),
                         "ticker": f.get("ticker"),
                         "amount_used": f.get("amount_used"),
+                        "rsu_years_utilized": f.get("rsu_years_utilized"),
+                        "rsu_years_utilized_label": f.get("rsu_years_utilized_label"),
+                        "rate": f.get("rate"),
+                        "fv": f.get("fv_contribution", f.get("amount_used")),
                     }
                 )
         return out
@@ -627,6 +634,37 @@ def summarize_plan_state(state: dict) -> dict:
                 "rows": rows,
             }
 
+    rsu_portfolio_preview: list[dict] = []
+    if isinstance(oga, dict):
+        raw_rsu = oga.get("rsu_portfolio")
+        if isinstance(raw_rsu, list):
+            for entry in raw_rsu:
+                if not isinstance(entry, dict):
+                    continue
+                tranches = entry.get("tranches") or []
+                rsu_portfolio_preview.append(
+                    {
+                        "company_name": entry.get("company_name"),
+                        "ticker": entry.get("ticker"),
+                        "price_usd_today": entry.get("price_usd_today"),
+                        "usd_to_inr_rate": entry.get("usd_to_inr_rate"),
+                        "amount_available_today": entry.get("amount_available_today"),
+                        "total_rsu_value_inr": entry.get("total_rsu_value_inr"),
+                        "tranches": [
+                            {
+                                "year": t.get("year"),
+                                "no_shares": t.get("no_shares"),
+                                "price_per_share_inr": t.get("price_per_share_inr"),
+                                "tranche_value_inr": t.get("tranche_value_inr"),
+                            }
+                            for t in tranches
+                            if isinstance(t, dict)
+                        ],
+                        "rsu_total_consumed": entry.get("rsu_total_consumed"),
+                        "rsu_remaining": entry.get("rsu_remaining"),
+                    }
+                )
+
     return {
         "client_name": name,
         "monthly_surplus": state.get("monthly_surplus"),
@@ -653,6 +691,7 @@ def summarize_plan_state(state: dict) -> dict:
         "education_planning_preview": education_planning_preview,
         "term_insurance_requirement": term_insurance_requirement,
         "wealth_at_retirement_preview": wealth_at_retirement_preview,
+        "rsu_portfolio_preview": rsu_portfolio_preview,
     }
 
 
