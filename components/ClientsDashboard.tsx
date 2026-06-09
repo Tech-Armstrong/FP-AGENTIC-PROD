@@ -236,6 +236,10 @@ function buildPlanOverridesForRun(
     rsu: string;
   },
   baselines: AppliedRates,
+  annuityInputs?: {
+    desiredMonthlyAnnuity?: string;
+    retirementAge?: string;
+  },
 ): PlanOverrides | null {
   const overrides: PlanOverrides = {};
   const epf = parseRateToDecimal(edited.epf);
@@ -265,6 +269,20 @@ function buildPlanOverridesForRun(
     !rateDecimalsMatch(rsu, baselines.rsuGrowth)
   ) {
     overrides.rsu_growth_rate = rsu;
+  }
+  const annuityRaw = annuityInputs?.desiredMonthlyAnnuity?.trim();
+  if (annuityRaw) {
+    const annuity = Number(annuityRaw);
+    if (Number.isFinite(annuity) && annuity > 0) {
+      overrides.desired_monthly_annuity = annuity;
+    }
+  }
+  const retirementAgeRaw = annuityInputs?.retirementAge?.trim();
+  if (retirementAgeRaw) {
+    const retirementAge = Number(retirementAgeRaw);
+    if (Number.isFinite(retirementAge) && retirementAge > 0) {
+      overrides.retirement_age = Math.round(retirementAge);
+    }
   }
   return Object.keys(overrides).length > 0 ? overrides : null;
 }
@@ -856,6 +874,8 @@ export function ClientsDashboard() {
   const [originalRates, setOriginalRates] = useState<AppliedRates>(emptyAppliedRates());
   const [educationTargets, setEducationTargets] =
     useState<Record<string, { ug?: string; pg?: string }>>({});
+  const [desiredMonthlyAnnuity, setDesiredMonthlyAnnuity] = useState("");
+  const [retirementAgeInput, setRetirementAgeInput] = useState("");
 
   const activePlanTab = planTabs.find((t) => t.id === activePlanTabId) ?? null;
   const activePlanSummary = activePlanTab?.summary;
@@ -869,6 +889,10 @@ export function ClientsDashboard() {
       rsu: rsuGrowthRatePct,
     },
     originalRates,
+    {
+      desiredMonthlyAnnuity,
+      retirementAge: retirementAgeInput,
+    },
   );
 
   useEffect(() => {
@@ -883,6 +907,8 @@ export function ClientsDashboard() {
     setLoadingDetail(true);
     setDetail(null);
     setEducationTargets({});
+    setDesiredMonthlyAnnuity("");
+    setRetirementAgeInput("");
     setActiveTab("overview");
     setPlanTabs([]);
     setActivePlanTabId(null);
@@ -913,6 +939,8 @@ export function ClientsDashboard() {
     setNpsRatePct(synced.nps);
     setMfRatePct(synced.mf);
     setRsuGrowthRatePct(synced.rsu);
+    const retAge = detail.client_data.client_data?.retirement_age;
+    setRetirementAgeInput(retAge != null ? String(retAge) : "");
   }, [detail?.record_id]);
 
   /** On tab switch, reset editable cells to that tab's frozen appliedRates (not live edits). */
@@ -1164,6 +1192,10 @@ export function ClientsDashboard() {
               onPlanComplete={handlePlanComplete}
               educationBlocks={educationBlocks}
               educationTargets={educationTargets}
+              desiredMonthlyAnnuity={desiredMonthlyAnnuity}
+              onDesiredMonthlyAnnuityChange={setDesiredMonthlyAnnuity}
+              retirementAge={retirementAgeInput}
+              onRetirementAgeChange={setRetirementAgeInput}
             />
 
             {/* ── Net Worth + Portfolio row ── */}

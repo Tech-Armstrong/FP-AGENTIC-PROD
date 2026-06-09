@@ -180,7 +180,7 @@ Defined in `Financial_Planning/Models/client_data_state.py` as a `TypedDict`.
 
 ### 5.3 Node list and DAG (actual edges)
 
-**20 active nodes** (emergency-fund node is commented out in `workflow.py` lines 58–59).
+**23 active nodes** (emergency-fund node is commented out in `workflow.py` lines 58–59).
 
 ```
 START
@@ -196,6 +196,7 @@ START
   → asset_basket_classification
   → risk_appetite_assessment          ← LLM
   → calculate_liquid_asset_value
+  → calculate_term_insurance_requirement
   → calculate_fixed_assets_value
   → calculate_asset_percentages_and_ratios
   → goal_prioritization               ← LLM
@@ -206,6 +207,8 @@ START
         False → choose_optimal_strategy
   → choose_optimal_strategy (when routed from plan_goals)
   → invest_monthly_surplus
+  → wealth_at_retirement
+  → calculate_retirement_annuity
   → END
 ```
 
@@ -249,6 +252,8 @@ START
 | `plan_prepayments` | `allocations_nodes.py` | Yes | Loan prepayment optimizer (uses `loan_prepayment_consolidated` logic) |
 | `choose_optimal_strategy` | `allocations_nodes.py` | Yes | Picks best among allocation scenarios (surplus + interest saved) |
 | `invest_monthly_surplus` | `basic_calculations_nodes.py` | Yes | Leftover surplus → 30% debt / 40% hybrid / 30% equity |
+| `wealth_at_retirement` | `retirement_nodes.py` | Yes | Aggregates projected corpus at retirement (EPF/PPF/NPS, FD, real estate, SIP/lumpsum for retirement goal) |
+| `calculate_retirement_annuity` | `retirement_nodes.py` | Yes | Income-preservation annuity check: rental/other income first, then FD → MF → RSU/ESOP yield; skips when `desired_monthly_annuity` ≤ 0 |
 | `check_and_allocate_emergency_fund` | `basic_calculations_nodes.py` | **Not in graph** | Implementation exists but commented out in `workflow.py` |
 
 **Nested agent graphs (inside two nodes):** `Financial_Planning/Agent/agent.py` — small ReAct loop (`llm` ↔ `action`) used only inside `risk_appetite_assessment` and `goal_prioritization`, not exposed to CopilotKit.
@@ -285,6 +290,7 @@ Airtable record
     → POST /financial-plan/run (re-fetch same record_id at run time + optional education_targets)
     → airtable_record_to_client_data()  (field mapping, hardcoded rates e.g. EPF 8.5%)
     → user targets injected onto education_planning rows (user_target_corpus_graduation / _post_graduation)
+    → optional PlanOverrides: rates → retirement_investments / mutual_funds / rsu_growth_rate; `retirement_age` and `desired_monthly_annuity` → `client_data`
     → workflow.invoke(initial_state)
     → summarize_plan_state(full_state)  (~20 goal rows max in previews)
     → FinancialPlanPanel UI + useCopilotReadable
@@ -429,7 +435,7 @@ Repo-root `.env` is loaded by `agent/main.py`, `backend/airtable_main.py`, and p
 | `POST` | `/api/copilotkit` | CopilotKit run payload | SSE (LangGraph) or adapter stream | `:8000` or Azure |
 | `GET` | `/api/airtable/clients` | — | `{ clients: [{ record_id, name }] }` | `GET :8001/clients` |
 | `GET` | `/api/airtable/clients/[id]` | — | `{ record_id, client_data: {...} }` | `GET :8001/clients/{id}` |
-| `POST` | `/api/financial-plan/run` | `{ record_id, education_targets?, overrides?: { epf_rate?, ppf_rate?, nps_rate?, mf_expected_return?, rsu_growth_rate? } }` | `{ ok, summary }` or `{ detail }` | `POST :8001/financial-plan/run` |
+| `POST` | `/api/financial-plan/run` | `{ record_id, education_targets?, overrides?: { epf_rate?, ppf_rate?, nps_rate?, mf_expected_return?, rsu_growth_rate?, desired_monthly_annuity?, retirement_age? } }` | `{ ok, summary }` or `{ detail }` | `POST :8001/financial-plan/run` |
 | `GET` | `/api/rsu-market-data` | — | RSU payload JSON | `GET :8001/rsu-market-data` |
 | `POST` | `/api/rsu-refresh` | optional tickers | refresh result | `POST :8001/rsu-refresh` |
 | `GET` | `/api/rsu/market-data` | `?ticker=` | legacy | `GET :8001/rsu/market-data` |
@@ -449,13 +455,13 @@ Repo-root `.env` is loaded by `agent/main.py`, `backend/airtable_main.py`, and p
 | `GET` | `/health` | — | `{ status: "ok" }` |
 | `GET` | `/clients` | — | `{ clients: [...] }` |
 | `GET` | `/clients/{record_id}` | — | `{ record_id, client_data }` |
-| `POST` | `/financial-plan/run` | `{ record_id, education_targets?, overrides?: PlanOverrides }` (`rsu_growth_rate` → `investment_details.rsu_growth_rate`) | `{ ok: true, summary: {...} }` or HTTP error |
+| `POST` | `/financial-plan/run` | `{ record_id, education_targets?, overrides?: PlanOverrides }` (rates → investments; `rsu_growth_rate` → `investment_details.rsu_growth_rate`; `retirement_age` / `desired_monthly_annuity` → `client_data`) | `{ ok: true, summary: {...} }` or HTTP error |
 | `GET` | `/rsu-market-data` | — | parquet-derived JSON |
 | `POST` | `/rsu-refresh` | `{ tickers?: string[] }` | refresh metadata |
 | `GET` | `/rsu/market-data` | query `ticker` | legacy |
 | `POST` | `/rsu/market-data/refresh` | query `force`, `ticker` | legacy |
 
-**`summary` shape** (from `summarize_plan_state`): `client_name`, `monthly_surplus`, `risk_appetite`, `liquidity_ratio`, `liquidity_flag`, `flexibility`, `spending_behavior`, `ending_liquid_pool`, `ending_monthly_surplus`, `sorted_goals_preview`, `goal_allocation_preview` (with `funded_from_preview`), `loans_exist`, `final_unused_monthly_surplus`, `retirement_goal_preview`.
+**`summary` shape** (from `summarize_plan_state`): `client_name`, `monthly_surplus`, `risk_appetite`, `liquidity_ratio`, `liquidity_flag`, `flexibility`, `spending_behavior`, `ending_liquid_pool`, `ending_monthly_surplus`, `sorted_goals_preview`, `goal_allocation_preview` (with `funded_from_preview`), `loans_exist`, `final_unused_monthly_surplus`, `retirement_goal_preview`, `wealth_at_retirement_preview`, `annuity_preview` (when `desired_monthly_annuity` > 0), `term_insurance_requirement`, `rsu_portfolio_preview`, …
 
 ---
 

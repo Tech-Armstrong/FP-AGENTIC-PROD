@@ -110,6 +110,8 @@ class PlanOverrides(BaseModel):
     nps_rate: float | None = None
     mf_expected_return: float | None = None
     rsu_growth_rate: float | None = None
+    desired_monthly_annuity: float | None = None
+    retirement_age: int | None = None
 
 
 # Backward-compatible alias
@@ -647,6 +649,12 @@ def apply_plan_overrides(
         rate = _normalize_rate(overrides.rsu_growth_rate)
         inv = payload.setdefault("investment_details", {})
         inv["rsu_growth_rate"] = rate
+    if overrides.retirement_age is not None:
+        payload["client_data"]["retirement_age"] = int(overrides.retirement_age)
+    if overrides.desired_monthly_annuity is not None:
+        payload["client_data"]["desired_monthly_annuity"] = float(
+            overrides.desired_monthly_annuity
+        )
     return payload
 
 

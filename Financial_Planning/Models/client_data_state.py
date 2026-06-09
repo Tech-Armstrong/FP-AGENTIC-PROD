@@ -59,6 +59,7 @@ class ClientState(TypedDict):
     ulip_opportunity_cost_data : dict
     term_insurance_summary: dict
     wealth_at_retirement: dict
+    retirement_annuity: dict
 
 class AgentState(TypedDict):
     messages: Annotated[list[AnyMessage], add]

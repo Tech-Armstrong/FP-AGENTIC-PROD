@@ -4,6 +4,7 @@ import * as React from "react";
 import {
   Activity,
   ArrowRightLeft,
+  Banknote,
   Heart,
   Landmark,
   PiggyBank,
@@ -79,6 +80,28 @@ export type PlanSummary = {
       future_value?: number | null;
     }[];
   } | null;
+  annuity_preview?: {
+    model?: string;
+    retirement_year?: number | string | null;
+    retirement_age?: number | null;
+    life_expectancy?: number | null;
+    desired_monthly_annuity?: number | null;
+    achievable?: boolean;
+    achievable_monthly_annuity?: number | null;
+    max_monthly_annuity?: number | null;
+    shortfall_monthly?: number | null;
+    surplus_income_monthly?: number | null;
+    total_available_monthly?: number | null;
+    sources?: {
+      key?: string;
+      label?: string;
+      rate?: string | null;
+      monthly_income?: number | null;
+      annual_income?: number | null;
+      corpus_fv?: number | null;
+      required?: boolean;
+    }[];
+  } | null;
   spouse_preview?: Record<string, unknown> | null;
   marriage_goals_preview?: Record<string, unknown>[] | null;
   education_targets_preview?: Record<string, unknown>[] | null;
@@ -114,6 +137,8 @@ export type PlanOverrides = {
   nps_rate?: number;
   mf_expected_return?: number;
   rsu_growth_rate?: number;
+  desired_monthly_annuity?: number;
+  retirement_age?: number;
 };
 
 /** @deprecated Use PlanOverrides — kept for existing imports */
@@ -176,6 +201,13 @@ const STEPS = [
 function fmtInr(n: number | null | undefined): string {
   if (n == null || Number.isNaN(n)) return "—";
   return `₹${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+}
+
+function fmtCorpusCaption(n: number | null | undefined): string {
+  if (n == null || Number.isNaN(n) || n <= 0) return "";
+  const cr = n / 1e7;
+  if (cr >= 1) return `from ₹${cr.toFixed(1)}cr corpus`;
+  return `from ${fmtInr(n)} corpus`;
 }
 
 function displayFundingType(t: string): string {
@@ -555,6 +587,10 @@ export function FinancialPlanPanel({
   onPlanComplete,
   educationBlocks,
   educationTargets,
+  desiredMonthlyAnnuity,
+  onDesiredMonthlyAnnuityChange,
+  retirementAge,
+  onRetirementAgeChange,
 }: {
   recordId: string | null;
   disabled?: boolean;
@@ -571,6 +607,10 @@ export function FinancialPlanPanel({
   }) => void;
   educationBlocks?: EducationChildBlock[];
   educationTargets?: Record<string, { ug?: string; pg?: string }>;
+  desiredMonthlyAnnuity: string;
+  onDesiredMonthlyAnnuityChange: (value: string) => void;
+  retirementAge: string;
+  onRetirementAgeChange: (value: string) => void;
 }) {
   const [loading, setLoading] = React.useState(false);
   const [showWarning, setShowWarning] = React.useState(false);
@@ -763,14 +803,41 @@ export function FinancialPlanPanel({
       {showWarning ? <PlanWarningOverlay onClose={() => setShowWarning(false)} /> : null}
 
       <div className="mb-6 overflow-hidden rounded-xl border border-slate-200 bg-[#f0f4f8] shadow-sm dark:border-slate-700 dark:bg-slate-900/50">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-[#1a365d] bg-white px-5 py-4 shadow-sm dark:border-sky-800 dark:bg-slate-900">
-          <div>
+        <div className="flex flex-wrap items-end justify-between gap-3 border-b-2 border-[#1a365d] bg-white px-5 py-4 shadow-sm dark:border-sky-800 dark:bg-slate-900">
+          <div className="min-w-0 flex-1">
             <p className="text-[0.72rem] font-bold uppercase tracking-widest text-[#1a365d] dark:text-sky-300">
               Financial Plan Generator
             </p>
             <p className="text-xs text-slate-500 dark:text-slate-400">
               Strategizing wealth, maximizing opportunities · Armstrong workflow
             </p>
+            <div className="mt-3 flex flex-wrap items-end gap-3">
+              <label className="flex flex-col gap-1 text-[0.72rem] font-medium text-slate-600 dark:text-slate-400">
+                Desired monthly annuity (₹)
+                <input
+                  type="number"
+                  min={0}
+                  step={1000}
+                  value={desiredMonthlyAnnuity}
+                  onChange={(e) => onDesiredMonthlyAnnuityChange(e.target.value)}
+                  placeholder="e.g. 50000"
+                  className="w-40 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-[0.72rem] font-medium text-slate-600 dark:text-slate-400">
+                Retirement age
+                <input
+                  type="number"
+                  min={40}
+                  max={80}
+                  step={1}
+                  value={retirementAge}
+                  onChange={(e) => onRetirementAgeChange(e.target.value)}
+                  placeholder="e.g. 60"
+                  className="w-28 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                />
+              </label>
+            </div>
           </div>
           <button
             type="button"
@@ -1108,6 +1175,122 @@ export function FinancialPlanPanel({
                       </table>
                     </div>
                   </div>
+                </div>
+              ) : null}
+
+              {s.annuity_preview ? (
+                <div className="mb-7">
+                  <ReviewSectionTitle icon={Banknote}>
+                    Retirement annuity
+                    {s.annuity_preview.retirement_year
+                      ? ` (${s.annuity_preview.retirement_year})`
+                      : ""}
+                  </ReviewSectionTitle>
+                  <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+                    <span className="text-slate-600 dark:text-slate-400">
+                      Desired{" "}
+                      <strong className="text-slate-900 dark:text-slate-100">
+                        {fmtInr(s.annuity_preview.desired_monthly_annuity)}
+                      </strong>
+                      /mo · Achievable{" "}
+                      <strong className="text-slate-900 dark:text-slate-100">
+                        {fmtInr(s.annuity_preview.achievable_monthly_annuity)}
+                      </strong>
+                      /mo
+                    </span>
+                    {s.annuity_preview.achievable ? (
+                      <span className="inline-block rounded-xl bg-emerald-50 px-2.5 py-0.5 text-[0.75rem] font-bold text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200">
+                        Achievable
+                      </span>
+                    ) : (
+                      <span className="inline-block rounded-xl bg-amber-50 px-2.5 py-0.5 text-[0.75rem] font-bold text-amber-900 dark:bg-amber-950/50 dark:text-amber-200">
+                        Shortfall {fmtInr(s.annuity_preview.shortfall_monthly)}/mo
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                    <div className="min-w-0">
+                      <PieChart
+                        data={(s.annuity_preview.sources ?? [])
+                          .filter((r) => Number(r.monthly_income) > 0)
+                          .map((r) => ({
+                            label: r.label || r.key || "—",
+                            value: Number(r.monthly_income ?? 0),
+                          }))}
+                      />
+                    </div>
+                    <div className="min-w-0 overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
+                      <table className="w-full min-w-[260px] border-collapse text-left text-[0.83rem]">
+                        <thead className="bg-slate-100 text-[0.72rem] font-bold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                          <tr>
+                            <th className="px-3.5 py-2.5">Source</th>
+                            <th className="px-3.5 py-2.5 text-right">Monthly income</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(s.annuity_preview.sources ?? []).map((r, i) => (
+                            <tr
+                              key={r.key ?? i}
+                              className={cn(
+                                "border-b border-slate-200 dark:border-slate-700",
+                                r.required === false &&
+                                  "text-slate-400 dark:text-slate-500",
+                              )}
+                            >
+                              <td className="px-3.5 py-2.5">
+                                <span
+                                  className={cn(
+                                    r.required === false &&
+                                      "text-slate-400 dark:text-slate-500",
+                                    r.required !== false &&
+                                      "text-slate-700 dark:text-slate-300",
+                                  )}
+                                >
+                                  {r.label || r.key}
+                                  {r.rate && r.rate !== "-" ? (
+                                    <span className="ml-1.5 text-[0.72rem] text-slate-400 dark:text-slate-500">
+                                      @ {r.rate}
+                                    </span>
+                                  ) : null}
+                                </span>
+                                {r.corpus_fv != null && r.corpus_fv > 0 ? (
+                                  <p className="mt-0.5 text-[0.72rem] text-slate-400 dark:text-slate-500">
+                                    {fmtCorpusCaption(r.corpus_fv)}
+                                  </p>
+                                ) : null}
+                                {r.required === false ? (
+                                  <span className="ml-1.5 text-[0.68rem] font-medium uppercase tracking-wide text-slate-400">
+                                    not required
+                                  </span>
+                                ) : null}
+                              </td>
+                              <td
+                                className={cn(
+                                  "px-3.5 py-2.5 text-right font-medium",
+                                  r.required === false
+                                    ? "text-slate-400 dark:text-slate-500"
+                                    : "text-slate-900 dark:text-slate-100",
+                                )}
+                              >
+                                {fmtInr(r.monthly_income)}
+                              </td>
+                            </tr>
+                          ))}
+                          <tr className="bg-slate-50 font-semibold dark:bg-slate-800/80">
+                            <td className="px-3.5 py-2.5 text-slate-900 dark:text-slate-100">
+                              Total available
+                            </td>
+                            <td className="px-3.5 py-2.5 text-right text-slate-900 dark:text-slate-100">
+                              {fmtInr(s.annuity_preview.total_available_monthly)}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                  <p className="mt-2.5 text-[0.82rem] leading-relaxed text-slate-600 dark:text-slate-400">
+                    Funded by asset income — principal is preserved (assets are not sold).
+                  </p>
                 </div>
               ) : null}
 

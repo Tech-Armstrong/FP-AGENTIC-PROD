@@ -17,6 +17,17 @@ from datetime import datetime, date
 from collections import defaultdict
 from Financial_Planning.Utilities.utility_functions import (calculate_future_value, calculate_present_value_annuity, epf_future_value, 
                                                             ppf_future_value, nps_future_value, calculate_investment_details)
+from Financial_Planning.RSU.constants import get_rsu_growth_rate
+
+def _parse_rate_string(rate_str, default: float = 0.065) -> float:
+    if isinstance(rate_str, (int, float)):
+        return float(rate_str)
+    if not rate_str or rate_str == "-":
+        return default
+    try:
+        return float(str(rate_str).replace("%", "").strip()) / 100
+    except (TypeError, ValueError):
+        return default
 
 def calculate_retirement_corpus(state: ClientState):
     """
@@ -506,3 +517,150 @@ def wealth_at_retirement(state: ClientState):
     print(f"wealth_at_retirement: {wealth}\n")
     print("--------------------------"*6)
     return {'wealth_at_retirement': wealth}
+
+
+def calculate_retirement_annuity(state: ClientState):
+    """
+    Income-preservation retirement annuity check: can passive income (rental/other,
+    FD interest, MF yield, RSU/ESOP yield) fund a desired monthly annuity without
+    spending principal?
+
+    Skips cleanly when desired_monthly_annuity is absent or <= 0.
+    """
+    print("--------------------------"*6)
+    print("\n")
+    print("Node: calculate_retirement_annuity \n")
+    print("Checking retirement annuity against asset income... \n")
+
+    client_data = state.get("client_data", {})
+    personal = client_data.get("client_data", {})
+    desired_monthly_annuity = float(personal.get("desired_monthly_annuity", 0) or 0)
+    if desired_monthly_annuity <= 0:
+        print("Skipping retirement annuity — desired_monthly_annuity not set\n")
+        print("--------------------------"*6)
+        return {}
+
+    retirement_age = personal.get("retirement_age", 60)
+    invest = client_data.get("investment_details", {})
+    fs = (invest.get("financial_summary") or [{}])[0]
+    surplus_income_monthly = float(fs.get("other_income(rental/interest/other)", 0) or 0)
+
+    ret_info = state.get("required_retirement_corpus", {})
+    client_info = ret_info.get("client_info", {})
+    years_to_ret = client_info.get("years_to_retirement", 0)
+
+    war = state.get("wealth_at_retirement", {})
+    retirement_year = war.get("retirement_year") or (date.today().year + years_to_ret)
+
+    # FD — reuse wealth_at_retirement breakdown
+    fd_breakdown = (war.get("breakdown") or {}).get("fixed_deposits", {})
+    fd_fv = float(fd_breakdown.get("future_value", 0) or 0)
+    fd_rate_str = fd_breakdown.get("rate", "6.5%")
+    fd_rate = _parse_rate_string(fd_rate_str, 0.065)
+    fd_income = fd_fv * fd_rate
+
+    # Mutual funds — single bucket
+    mf_fv = 0.0
+    mf_income = 0.0
+    mf_rates: list[float] = []
+    for mf in invest.get("mutual_funds") or []:
+        cv = float(mf.get("current_value", 0) or 0)
+        r = float(mf.get("expected_annual_return", 0.12) or 0.12)
+        fv = calculate_future_value(cv, r, years_to_ret)
+        mf_fv += fv
+        mf_income += fv * r
+        mf_rates.append(r)
+    mf_rate = mf_rates[0] if mf_rates and len(set(round(x, 6) for x in mf_rates)) == 1 else 0.12
+    mf_rate_str = f"{mf_rate * 100:.1f}%"
+
+    # ESOP corpus @ 12% growth and yield
+    esop_rate = 0.12
+    esop_fv = 0.0
+    for esop in invest.get("esops") or []:
+        vested = float(esop.get("vested_esops_value", 0) or 0)
+        esop_fv += calculate_future_value(vested, esop_rate, years_to_ret)
+    esop_income = esop_fv * esop_rate
+
+    # RSU corpus — best-effort from plan RSU portfolio totals
+    # TODO: reuse full market-data RSU valuation from plan_goals when exposed on state
+    rsu_rate = get_rsu_growth_rate(invest)
+    rsu_fv = 0.0
+    oga = state.get("optimal_goal_allocation", {})
+    for entry in oga.get("rsu_portfolio") or []:
+        total = float(entry.get("total_rsu_value_inr", 0) or 0)
+        if total > 0:
+            rsu_fv += calculate_future_value(total, rsu_rate, years_to_ret)
+    rsu_income = rsu_fv * rsu_rate
+
+    rsu_esop_fv = round(esop_fv + rsu_fv, 2)
+    rsu_esop_income = esop_income + rsu_income
+    if esop_fv > 0 and rsu_fv > 0:
+        rsu_esop_rate_str = f"ESOP {esop_rate * 100:.0f}% · RSU {rsu_rate * 100:.0f}%"
+    elif esop_fv > 0:
+        rsu_esop_rate_str = f"{esop_rate * 100:.0f}%"
+    elif rsu_fv > 0:
+        rsu_esop_rate_str = f"{rsu_rate * 100:.0f}%"
+    else:
+        rsu_esop_rate_str = f"{esop_rate * 100:.0f}%"
+
+    desired_annual = desired_monthly_annuity * 12
+    surplus_annual = surplus_income_monthly * 12
+    cumulative = surplus_annual
+
+    asset_sources = [
+        ("fixed_deposits", "FD interest", fd_rate_str, fd_income, fd_fv),
+        ("mutual_funds", "Mutual fund yield", mf_rate_str, mf_income, mf_fv),
+        ("rsu_esop", "RSU / ESOP yield", rsu_esop_rate_str, rsu_esop_income, rsu_esop_fv),
+    ]
+
+    sources = [
+        {
+            "key": "rental_other_income",
+            "label": "Rental / other income",
+            "rate": "-",
+            "monthly_income": round(surplus_income_monthly, 2),
+            "annual_income": round(surplus_annual, 2),
+            "corpus_fv": None,
+            "required": surplus_annual > 0,
+        }
+    ]
+
+    for key, label, rate_str, annual_income, corpus_fv in asset_sources:
+        required = cumulative < desired_annual
+        cumulative += annual_income
+        sources.append(
+            {
+                "key": key,
+                "label": label,
+                "rate": rate_str,
+                "monthly_income": round(annual_income / 12, 2),
+                "annual_income": round(annual_income, 2),
+                "corpus_fv": round(corpus_fv, 2) if corpus_fv else None,
+                "required": required,
+            }
+        )
+
+    total_available_annual = surplus_annual + fd_income + mf_income + rsu_esop_income
+    achievable = total_available_annual >= desired_annual
+    max_monthly = total_available_annual / 12
+    shortfall_monthly = max(0.0, desired_monthly_annuity - max_monthly)
+    achievable_monthly = desired_monthly_annuity if achievable else max_monthly
+
+    result = {
+        "model": "income_preservation",
+        "retirement_year": retirement_year,
+        "retirement_age": retirement_age,
+        "life_expectancy": 85,
+        "desired_monthly_annuity": round(desired_monthly_annuity, 2),
+        "achievable": achievable,
+        "achievable_monthly_annuity": round(achievable_monthly, 2),
+        "max_monthly_annuity": round(max_monthly, 2),
+        "shortfall_monthly": round(shortfall_monthly, 2),
+        "surplus_income_monthly": round(surplus_income_monthly, 2),
+        "total_available_monthly": round(max_monthly, 2),
+        "sources": sources,
+    }
+
+    print(f"retirement_annuity: {result}\n")
+    print("--------------------------"*6)
+    return {"retirement_annuity": result}
