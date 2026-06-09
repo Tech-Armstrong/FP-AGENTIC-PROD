@@ -701,71 +701,13 @@ def summarize_plan_state(state: dict) -> dict:
     }
 
 
-def _debug_log(hypothesis_id: str, location: str, message: str, data: dict) -> None:
-    # #region agent log
-    import json
-    import time
-
-    try:
-        payload = {
-            "sessionId": "4463c8",
-            "runId": "pre-fix",
-            "hypothesisId": hypothesis_id,
-            "location": location,
-            "message": message,
-            "data": data,
-            "timestamp": int(time.time() * 1000),
-        }
-        with open(REPO_ROOT / "debug-4463c8.log", "a", encoding="utf-8") as f:
-            f.write(json.dumps(payload) + "\n")
-    except OSError:
-        pass
-    # #endregion
-
-
 def _load_workflow_runner():
-    defaults_path = REPO_ROOT / "Financial_Planning" / "education_fee_defaults.py"
-    # #region agent log
-    _debug_log(
-        "A",
-        "financial_plan_runner.py:_load_workflow_runner:entry",
-        "workflow import attempt",
-        {
-            "repo_root": str(REPO_ROOT),
-            "cwd": os.getcwd(),
-            "sys_path_head": sys.path[:5],
-            "education_fee_defaults_exists": defaults_path.is_file(),
-            "education_fee_defaults_path": str(defaults_path),
-            "python_executable": sys.executable,
-        },
-    )
-    # #endregion
     try:
         from Financial_Planning.Workflow.workflow import run_financial_plan_workflow
 
-        # #region agent log
-        _debug_log(
-            "B",
-            "financial_plan_runner.py:_load_workflow_runner:success",
-            "workflow import succeeded",
-            {"run_phase": "post-fix"},
-        )
-        # #endregion
         return run_financial_plan_workflow
     except ModuleNotFoundError as e:
         name = getattr(e, "name", None) or str(e)
-        # #region agent log
-        _debug_log(
-            "A",
-            "financial_plan_runner.py:_load_workflow_runner:module_not_found",
-            "workflow import failed",
-            {
-                "missing_module": name,
-                "exception": str(e),
-                "education_fee_defaults_exists": defaults_path.is_file(),
-            },
-        )
-        # #endregion
         raise FinancialPlanDependencyError(
             "Missing Python package(s) for Make plan. Use the same venv as the FastAPI server and run: "
             "pip install -r backend/requirements.txt "

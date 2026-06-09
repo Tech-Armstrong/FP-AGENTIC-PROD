@@ -99,6 +99,7 @@ export type PlanSummary = {
       monthly_income?: number | null;
       annual_income?: number | null;
       corpus_fv?: number | null;
+      remaining_base?: number | null;
       required?: boolean;
     }[];
   } | null;
@@ -1253,9 +1254,14 @@ export function FinancialPlanPanel({
                                     </span>
                                   ) : null}
                                 </span>
-                                {r.corpus_fv != null && r.corpus_fv > 0 ? (
+                                {r.remaining_base != null && r.remaining_base > 0 ? (
                                   <p className="mt-0.5 text-[0.72rem] text-slate-400 dark:text-slate-500">
-                                    {fmtCorpusCaption(r.corpus_fv)}
+                                    from remaining {r.key === "esop" ? "ESOP" : "RSU"}{" "}
+                                    {fmtInr(r.remaining_base)} (yield only — principal kept)
+                                  </p>
+                                ) : r.corpus_fv != null && r.corpus_fv > 0 ? (
+                                  <p className="mt-0.5 text-[0.72rem] text-slate-400 dark:text-slate-500">
+                                    from {fmtInr(r.corpus_fv)} corpus
                                   </p>
                                 ) : null}
                                 {r.required === false ? (
@@ -1289,7 +1295,8 @@ export function FinancialPlanPanel({
                     </div>
                   </div>
                   <p className="mt-2.5 text-[0.82rem] leading-relaxed text-slate-600 dark:text-slate-400">
-                    Funded by asset income — principal is preserved (assets are not sold).
+                    Funded by income/yield only — ESOP, RSU, FD and funds keep their principal; the RSU
+                    tracker&apos;s remaining balance is unchanged.
                   </p>
                 </div>
               ) : null}

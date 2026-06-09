@@ -521,10 +521,11 @@ def wealth_at_retirement(state: ClientState):
 
 def calculate_retirement_annuity(state: ClientState):
     """
-    Income-preservation retirement annuity check: can passive income (rental/other,
-    FD interest, MF yield, RSU/ESOP yield) fund a desired monthly annuity without
-    spending principal?
+    Income-preservation retirement annuity check: can yield from ESOP, RSU,
+    rental/other, FD, and MF fund a desired monthly annuity without spending principal?
 
+    Priority order: ESOP → RSU → rental/other → FD → MF.
+    ESOP/RSU use remaining pools after education allocation (60% usable cap).
     Skips cleanly when desired_monthly_annuity is absent or <= 0.
     """
     print("--------------------------"*6)
@@ -552,97 +553,102 @@ def calculate_retirement_annuity(state: ClientState):
     war = state.get("wealth_at_retirement", {})
     retirement_year = war.get("retirement_year") or (date.today().year + years_to_ret)
 
-    # FD — reuse wealth_at_retirement breakdown
+    oga = state.get("optimal_goal_allocation", {}) or {}
+    goals = oga.get("goals", []) or []
+    rsu_portfolio = oga.get("rsu_portfolio", []) or []
+
+    # ── 1. ESOP yield (remaining after education, 60% usable cap) ───────────
+    esop_rate = 0.12
+    esop_usable_cap = 0.60
+    vested_total = sum(
+        float(e.get("vested_esops_value", 0) or 0) for e in (invest.get("esops") or [])
+    )
+    esop_usable = vested_total * esop_usable_cap
+    esop_consumed = 0.0
+    for goal in goals:
+        for fund in goal.get("funded_from") or []:
+            if fund.get("type") == "esop_funds":
+                esop_consumed += float(fund.get("pv_allocated_today", 0) or 0)
+    esop_remaining = max(0.0, esop_usable - esop_consumed)
+    esop_fv = calculate_future_value(esop_remaining, esop_rate, years_to_ret) if esop_remaining > 0 else 0.0
+    esop_income = esop_fv * esop_rate
+
+    # ── 2. RSU yield (tracker remaining — income-only, does not mutate rsu_remaining)
+    # Time basis is approximate (mixes vest-year projections); acceptable for v1.
+    rsu_rate = get_rsu_growth_rate(invest)
+    rsu_remaining = sum(float(p.get("rsu_remaining", 0) or 0) for p in rsu_portfolio)
+    rsu_fv = calculate_future_value(rsu_remaining, rsu_rate, years_to_ret) if rsu_remaining > 0 else 0.0
+    rsu_income = rsu_fv * rsu_rate
+
+    # ── 3. Rental / other income (face value, not grown) ────────────────────
+    rental_annual = surplus_income_monthly * 12
+
+    # ── 4. FD interest ──────────────────────────────────────────────────────
     fd_breakdown = (war.get("breakdown") or {}).get("fixed_deposits", {})
     fd_fv = float(fd_breakdown.get("future_value", 0) or 0)
     fd_rate_str = fd_breakdown.get("rate", "6.5%")
     fd_rate = _parse_rate_string(fd_rate_str, 0.065)
     fd_income = fd_fv * fd_rate
 
-    # Mutual funds — single bucket
+    # ── 5. Mutual funds (single bucket) ───────────────────────────────────────
     mf_fv = 0.0
     mf_income = 0.0
-    mf_rates: list[float] = []
+    mf_rate = 0.12
     for mf in invest.get("mutual_funds") or []:
         cv = float(mf.get("current_value", 0) or 0)
         r = float(mf.get("expected_annual_return", 0.12) or 0.12)
+        if mf_fv == 0.0:
+            mf_rate = r
         fv = calculate_future_value(cv, r, years_to_ret)
         mf_fv += fv
         mf_income += fv * r
-        mf_rates.append(r)
-    mf_rate = mf_rates[0] if mf_rates and len(set(round(x, 6) for x in mf_rates)) == 1 else 0.12
     mf_rate_str = f"{mf_rate * 100:.1f}%"
 
-    # ESOP corpus @ 12% growth and yield
-    esop_rate = 0.12
-    esop_fv = 0.0
-    for esop in invest.get("esops") or []:
-        vested = float(esop.get("vested_esops_value", 0) or 0)
-        esop_fv += calculate_future_value(vested, esop_rate, years_to_ret)
-    esop_income = esop_fv * esop_rate
-
-    # RSU corpus — best-effort from plan RSU portfolio totals
-    # TODO: reuse full market-data RSU valuation from plan_goals when exposed on state
-    rsu_rate = get_rsu_growth_rate(invest)
-    rsu_fv = 0.0
-    oga = state.get("optimal_goal_allocation", {})
-    for entry in oga.get("rsu_portfolio") or []:
-        total = float(entry.get("total_rsu_value_inr", 0) or 0)
-        if total > 0:
-            rsu_fv += calculate_future_value(total, rsu_rate, years_to_ret)
-    rsu_income = rsu_fv * rsu_rate
-
-    rsu_esop_fv = round(esop_fv + rsu_fv, 2)
-    rsu_esop_income = esop_income + rsu_income
-    if esop_fv > 0 and rsu_fv > 0:
-        rsu_esop_rate_str = f"ESOP {esop_rate * 100:.0f}% · RSU {rsu_rate * 100:.0f}%"
-    elif esop_fv > 0:
-        rsu_esop_rate_str = f"{esop_rate * 100:.0f}%"
-    elif rsu_fv > 0:
-        rsu_esop_rate_str = f"{rsu_rate * 100:.0f}%"
-    else:
-        rsu_esop_rate_str = f"{esop_rate * 100:.0f}%"
+    def _source_row(
+        key: str,
+        label: str,
+        rate: str,
+        annual_income: float,
+        corpus_fv: float | None,
+        remaining_base: float | None,
+        required: bool,
+    ) -> dict:
+        return {
+            "key": key,
+            "label": label,
+            "rate": rate,
+            "monthly_income": round(annual_income / 12, 2),
+            "annual_income": round(annual_income, 2),
+            "corpus_fv": round(corpus_fv, 2) if corpus_fv else None,
+            "remaining_base": round(remaining_base, 2) if remaining_base else None,
+            "required": required,
+        }
 
     desired_annual = desired_monthly_annuity * 12
-    surplus_annual = surplus_income_monthly * 12
-    cumulative = surplus_annual
+    cumulative = 0.0
 
-    asset_sources = [
-        ("fixed_deposits", "FD interest", fd_rate_str, fd_income, fd_fv),
-        ("mutual_funds", "Mutual fund yield", mf_rate_str, mf_income, mf_fv),
-        ("rsu_esop", "RSU / ESOP yield", rsu_esop_rate_str, rsu_esop_income, rsu_esop_fv),
+    ordered_candidates = [
+        ("esop", "ESOP yield", "12.0%", esop_income, esop_fv if esop_fv else None, esop_remaining if esop_remaining else None),
+        ("rsu", "RSU yield", f"{rsu_rate * 100:.1f}%", rsu_income, rsu_fv if rsu_fv else None, rsu_remaining if rsu_remaining else None),
+        ("rental_other_income", "Rental / other income", "-", rental_annual, None, None),
+        ("fixed_deposits", "FD interest", fd_rate_str, fd_income, fd_fv if fd_fv else None, None),
+        ("mutual_funds", "Mutual fund yield", mf_rate_str, mf_income, mf_fv if mf_fv else None, None),
     ]
 
-    sources = [
-        {
-            "key": "rental_other_income",
-            "label": "Rental / other income",
-            "rate": "-",
-            "monthly_income": round(surplus_income_monthly, 2),
-            "annual_income": round(surplus_annual, 2),
-            "corpus_fv": None,
-            "required": surplus_annual > 0,
-        }
-    ]
-
-    for key, label, rate_str, annual_income, corpus_fv in asset_sources:
+    sources: list[dict] = []
+    total_available_annual = 0.0
+    for key, label, rate_str, annual_income, corpus_fv, remaining_base in ordered_candidates:
+        if annual_income <= 0:
+            continue
         required = cumulative < desired_annual
         cumulative += annual_income
+        total_available_annual += annual_income
         sources.append(
-            {
-                "key": key,
-                "label": label,
-                "rate": rate_str,
-                "monthly_income": round(annual_income / 12, 2),
-                "annual_income": round(annual_income, 2),
-                "corpus_fv": round(corpus_fv, 2) if corpus_fv else None,
-                "required": required,
-            }
+            _source_row(key, label, rate_str, annual_income, corpus_fv, remaining_base, required)
         )
 
-    total_available_annual = surplus_annual + fd_income + mf_income + rsu_esop_income
     achievable = total_available_annual >= desired_annual
-    max_monthly = total_available_annual / 12
+    max_monthly = total_available_annual / 12 if total_available_annual > 0 else 0.0
     shortfall_monthly = max(0.0, desired_monthly_annuity - max_monthly)
     achievable_monthly = desired_monthly_annuity if achievable else max_monthly
 
