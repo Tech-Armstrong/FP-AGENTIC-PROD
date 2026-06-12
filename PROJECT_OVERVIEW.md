@@ -252,8 +252,8 @@ START
 | `plan_prepayments` | `allocations_nodes.py` | Yes | Loan prepayment optimizer (uses `loan_prepayment_consolidated` logic) |
 | `choose_optimal_strategy` | `allocations_nodes.py` | Yes | Picks best among allocation scenarios (surplus + interest saved) |
 | `invest_monthly_surplus` | `basic_calculations_nodes.py` | Yes | Leftover surplus → 30% debt / 40% hybrid / 30% equity |
-| `wealth_at_retirement` | `retirement_nodes.py` | Yes | Aggregates projected corpus at retirement (EPF/PPF/NPS, FD, real estate, SIP/lumpsum for retirement goal) |
-| `calculate_retirement_annuity` | `retirement_nodes.py` | Yes | Income-preservation annuity: ESOP → RSU → rental/other → FD → MF yield (remaining pools after education; skips when `desired_monthly_annuity` ≤ 0) |
+| `wealth_at_retirement` | `retirement_nodes.py` | Yes | Aggregates projected corpus at retirement (EPF/PPF/NPS, FD, real estate, leftover ESOP/RSU, SIP/lumpsum for retirement goal) |
+| `calculate_retirement_annuity` | `retirement_nodes.py` | Yes | Income-preservation annuity: ESOP → RSU → rental/other → FD → MF yield; table shows **only used** sources capped to amount used ("Total used"); `max_monthly_annuity` = uncapped capacity; skips when `desired_monthly_annuity` ≤ 0 |
 | `check_and_allocate_emergency_fund` | `basic_calculations_nodes.py` | **Not in graph** | Implementation exists but commented out in `workflow.py` |
 
 **Nested agent graphs (inside two nodes):** `Financial_Planning/Agent/agent.py` — small ReAct loop (`llm` ↔ `action`) used only inside `risk_appetite_assessment` and `goal_prioritization`, not exposed to CopilotKit.

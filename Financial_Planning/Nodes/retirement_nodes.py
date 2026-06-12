@@ -419,6 +419,7 @@ def wealth_at_retirement(state: ClientState):
         - Retirement schemes (EPF / PPF / NPS) from retirement_schemes_fv
         - Fixed deposits compounded to retirement
         - Real estate grown at 3% p.a. to retirement
+        - Leftover ESOP/RSU pools (after goal allocation) grown to retirement
         - SIP / freed-SIP / lumpsum contributions earmarked for the
           retirement goal (from optimal_goal_allocation)
 
@@ -476,6 +477,30 @@ def wealth_at_retirement(state: ClientState):
             current_val    = asset['real_estate_investment'].get('current_market_value', 0)
             real_estate_fv += current_val * ((1.03) ** years_to_ret)
 
+    # ── 3b. Leftover ESOP / RSU (remaining pools after goal allocation) ──
+    oga_state = state.get('optimal_goal_allocation', {}) or {}
+    goals_state = oga_state.get('goals', []) or []
+    rsu_portfolio = oga_state.get('rsu_portfolio', []) or []
+
+    esop_rate = 0.12
+    esop_usable_cap = 0.60
+    vested_total = sum(
+        float(e.get('vested_esops_value', 0) or 0)
+        for e in (invest_detail.get('esops') or [])
+    )
+    esop_usable = vested_total * esop_usable_cap
+    esop_consumed = 0.0
+    for goal in goals_state:
+        for fund in goal.get('funded_from') or []:
+            if fund.get('type') == 'esop_funds':
+                esop_consumed += float(fund.get('pv_allocated_today', 0) or 0)
+    esop_remaining = max(0.0, esop_usable - esop_consumed)
+    esop_fv = calculate_future_value(esop_remaining, esop_rate, years_to_ret) if esop_remaining > 0 else 0.0
+
+    rsu_rate = get_rsu_growth_rate(invest_detail)
+    rsu_remaining = sum(float(p.get('rsu_remaining', 0) or 0) for p in rsu_portfolio)
+    rsu_fv = calculate_future_value(rsu_remaining, rsu_rate, years_to_ret) if rsu_remaining > 0 else 0.0
+
     # ── 4. SIP / Lumpsum / Freed-SIP contributions for Retirement ────────
     sip_fv_retirement       = 0   # sip_from_surplus / sip_from_partial_surplus only
     freed_sip_fv_retirement = 0   # freed_sip (released EMI redirected to retirement)
@@ -495,7 +520,8 @@ def wealth_at_retirement(state: ClientState):
 
     # ── 5. Aggregate totals ──────────────────────────────────────────────
     total_corpus = (fd_fv + epf_fv + ppf_fv + nps_fv + real_estate_fv
-                    + sip_fv_retirement + freed_sip_fv_retirement + lumpsum_fv_retirement)
+                    + sip_fv_retirement + freed_sip_fv_retirement + lumpsum_fv_retirement
+                    + esop_fv + rsu_fv)
 
     wealth_breakdown = {
         "epf":         {"future_value": round(epf_fv, 2),                 "rate": epf_rate},
@@ -503,6 +529,8 @@ def wealth_at_retirement(state: ClientState):
         "nps":         {"future_value": round(nps_fv, 2),                 "rate": nps_rate},
         "fixed_deposits": {"future_value": round(fd_fv, 2),              "rate": fd_rate},
         "real_estate": {"future_value": round(real_estate_fv, 2),        "rate": "3.0%"},
+        "esop":        {"future_value": round(esop_fv, 2),               "rate": f"{esop_rate * 100:.1f}%"},
+        "rsu":         {"future_value": round(rsu_fv, 2),                "rate": f"{rsu_rate * 100:.1f}%"},
         "sip":         {"future_value": round(sip_fv_retirement, 2),     "rate": "-"},
         "freed_sip":   {"future_value": round(freed_sip_fv_retirement, 2), "rate": "-"},
         "lumpsum":     {"future_value": round(lumpsum_fv_retirement, 2), "rate": "-"},
@@ -624,9 +652,6 @@ def calculate_retirement_annuity(state: ClientState):
             "required": required,
         }
 
-    desired_annual = desired_monthly_annuity * 12
-    cumulative = 0.0
-
     ordered_candidates = [
         ("esop", "ESOP yield", "12.0%", esop_income, esop_fv if esop_fv else None, esop_remaining if esop_remaining else None),
         ("rsu", "RSU yield", f"{rsu_rate * 100:.1f}%", rsu_income, rsu_fv if rsu_fv else None, rsu_remaining if rsu_remaining else None),
@@ -635,22 +660,37 @@ def calculate_retirement_annuity(state: ClientState):
         ("mutual_funds", "Mutual fund yield", mf_rate_str, mf_income, mf_fv if mf_fv else None, None),
     ]
 
+    desired_annual = desired_monthly_annuity * 12
+
+    # Achievability is judged on the FULL (uncapped) yield capacity of every source.
+    full_total_annual = sum(
+        annual_income for (_k, _l, _r, annual_income, _c, _b) in ordered_candidates
+        if annual_income > 0
+    )
+    achievable = full_total_annual >= desired_annual
+
+    # Display only the sources actually drawn on, in priority order, each capped to
+    # the remaining need. Once the desired annuity is met, the remaining (cheaper-
+    # ranked) sources are unused and omitted entirely.
     sources: list[dict] = []
-    total_available_annual = 0.0
+    cumulative = 0.0
     for key, label, rate_str, annual_income, corpus_fv, remaining_base in ordered_candidates:
         if annual_income <= 0:
             continue
-        required = cumulative < desired_annual
-        cumulative += annual_income
-        total_available_annual += annual_income
+        remaining_need = desired_annual - cumulative
+        if remaining_need <= 0:
+            break
+        used = min(annual_income, remaining_need)
+        cumulative += used
         sources.append(
-            _source_row(key, label, rate_str, annual_income, corpus_fv, remaining_base, required)
+            _source_row(key, label, rate_str, used, corpus_fv, remaining_base, True)
         )
 
-    achievable = total_available_annual >= desired_annual
-    max_monthly = total_available_annual / 12 if total_available_annual > 0 else 0.0
+    used_total_annual = cumulative
+    max_monthly = full_total_annual / 12 if full_total_annual > 0 else 0.0
+    used_monthly = used_total_annual / 12
     shortfall_monthly = max(0.0, desired_monthly_annuity - max_monthly)
-    achievable_monthly = desired_monthly_annuity if achievable else max_monthly
+    achievable_monthly = desired_monthly_annuity if achievable else used_monthly
 
     result = {
         "model": "income_preservation",
@@ -663,7 +703,7 @@ def calculate_retirement_annuity(state: ClientState):
         "max_monthly_annuity": round(max_monthly, 2),
         "shortfall_monthly": round(shortfall_monthly, 2),
         "surplus_income_monthly": round(surplus_income_monthly, 2),
-        "total_available_monthly": round(max_monthly, 2),
+        "total_available_monthly": round(used_monthly, 2),
         "sources": sources,
     }
 

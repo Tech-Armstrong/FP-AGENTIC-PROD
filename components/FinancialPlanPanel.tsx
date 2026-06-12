@@ -1284,7 +1284,7 @@ export function FinancialPlanPanel({
                           ))}
                           <tr className="bg-slate-50 font-semibold dark:bg-slate-800/80">
                             <td className="px-3.5 py-2.5 text-slate-900 dark:text-slate-100">
-                              Total available
+                              Total used
                             </td>
                             <td className="px-3.5 py-2.5 text-right text-slate-900 dark:text-slate-100">
                               {fmtInr(s.annuity_preview.total_available_monthly)}

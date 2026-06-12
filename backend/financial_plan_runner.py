@@ -605,6 +605,8 @@ def summarize_plan_state(state: dict) -> dict:
             "nps": "NPS",
             "fixed_deposits": "Fixed Deposits",
             "real_estate": "Real Estate",
+            "esop": "ESOP (leftover)",
+            "rsu": "RSU (leftover)",
             "sip": "SIP",
             "freed_sip": "Freed EMI",
             "lumpsum": "Lumpsum",
