@@ -521,6 +521,18 @@ def airtable_record_to_client_data(fields: dict) -> dict:
     if li_name or li_coverage:
         life_insurance.append({"company_name": li_name, "coverage_value": li_coverage})
 
+    # ── 14b. Medical insurance (employer + self) ─────────────────────────────
+    medical_insurance = []
+    for slot in ("employer", "self"):
+        mi_name     = _s(f"medical_insurance_{slot}_name")
+        mi_coverage = _f(f"medical_insurance_{slot}_coverage_value")
+        if mi_name or mi_coverage:
+            medical_insurance.append({
+                "policy_type":    slot.capitalize(),
+                "company_name":   mi_name,
+                "coverage_value": mi_coverage,
+            })
+
     # ── Real estate portfolio (after liabilities for loan linkage) ───────────
     home_loans = [l for l in liabilities if l.get("type") == "Home loan"]
     home_loan_balance = sum(float(l.get("outstanding_balance") or 0) for l in home_loans)
@@ -608,6 +620,7 @@ def airtable_record_to_client_data(fields: dict) -> dict:
         "liabilities":        liabilities,
         "education_planning": education_planning,
         "life_insurance":     life_insurance,
+        "medical_insurance":  medical_insurance,
     }
 
 

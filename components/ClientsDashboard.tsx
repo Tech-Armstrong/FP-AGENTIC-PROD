@@ -90,6 +90,7 @@ interface ClientDetail {
       course_duration_pg?: number | null;
     }[];
     life_insurance: { company_name: string; coverage_value: number }[];
+    medical_insurance: { policy_type: string; company_name: string; coverage_value: number }[];
   };
 }
 
@@ -1094,6 +1095,7 @@ export function ClientsDashboard() {
   });
   const eduPlans   = detail?.client_data?.education_planning ?? [];
   const lifeIns    = detail?.client_data?.life_insurance ?? [];
+  const medIns     = detail?.client_data?.medical_insurance ?? [];
   const kids       = cd?.children ?? [];
 
   const hasSpouse = !!(cd?.spouse?.spouse_name || cd?.spouse_name || cd?.spouse?.spouse_dob || cd?.spouse_dob);
@@ -1427,6 +1429,11 @@ export function ClientsDashboard() {
                     {lifeIns.length > 0 && <>
                       <SectionLabel icon="❤️" text="Life Insurance" />
                       <DataTable rows={lifeIns.map(l => ({ "Company": l.company_name || "—", "Coverage": inr(l.coverage_value) }))} />
+                    </>}
+
+                    {medIns.length > 0 && <>
+                      <SectionLabel icon="🏥" text="Medical Insurance" />
+                      <DataTable rows={medIns.map(m => ({ "Type": m.policy_type, "Company": m.company_name || "—", "Coverage": inr(m.coverage_value) }))} />
                     </>}
                   </>
                 )}

@@ -176,7 +176,7 @@ Defined in `Financial_Planning/Models/client_data_state.py` as a `TypedDict`.
 
 **Merge semantics:** LangGraph merges each node's return dict into state. Several fields use `Annotated[..., add]` (list/reducer append): `goal_funding`, `liability_allocation`, `used_monthly_surplus`, `used_liquid_surplus`, `freed_timeline`, `unused_monthly_surplus`. Most other keys are last-write wins.
 
-**Input shape:** `client_data` matches Armstrong layout: top-level keys `client_data`, `investment_details`, `financial_goals`, `liabilities`, `education_planning`, `life_insurance` — built by `airtable_record_to_client_data()` in `backend/airtable_main.py`.
+**Input shape:** `client_data` matches Armstrong layout: top-level keys `client_data`, `investment_details`, `financial_goals`, `liabilities`, `education_planning`, `life_insurance`, `medical_insurance` — built by `airtable_record_to_client_data()` in `backend/airtable_main.py`.
 
 ### 5.3 Node list and DAG (actual edges)
 
