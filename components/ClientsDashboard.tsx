@@ -959,6 +959,7 @@ export function ClientsDashboard() {
     overrides: PlanOverrides | null;
     appliedRates: AppliedRates;
     summary: PlanSummary;
+    workflowState?: Record<string, unknown>;
     label?: string;
   }) => {
     setPlanTabs((prev) => {
@@ -970,6 +971,7 @@ export function ClientsDashboard() {
         overrides: payload.overrides,
         appliedRates: payload.appliedRates,
         summary: payload.summary,
+        workflowState: payload.workflowState,
       };
       setActivePlanTabId(id);
       return [...prev, tab];

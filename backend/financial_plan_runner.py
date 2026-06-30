@@ -6,6 +6,7 @@ Requires repo root on sys.path and cwd = repo root so Financial_Planning/* data 
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 from copy import deepcopy
@@ -717,7 +718,41 @@ def _load_workflow_runner():
         ) from e
 
 
-def run_financial_plan_for_client(client_payload: dict) -> dict:
+def json_safe_workflow_state(state: dict) -> dict:
+    """Round-trip workflow state through JSON so dates and other types serialize for the API."""
+    return json.loads(json.dumps(state, default=str))
+
+
+def generate_ppt_from_workflow_state(workflow_state: dict) -> tuple[bytes, str]:
+    """Build a .pptx from a prior Make plan workflow state (no workflow re-run)."""
+    ensure_fp_runtime()
+    try:
+        from Financial_Planning.Utilities.ppt_runner import (
+            PptDependencyError,
+            PptTemplateError,
+            generate_financial_plan_ppt,
+        )
+    except ModuleNotFoundError as e:
+        name = getattr(e, "name", None) or str(e)
+        raise FinancialPlanDependencyError(
+            "Missing Python package(s) for PPT generation. Run: "
+            "pip install -r backend/requirements.txt "
+            f"(import failed for: {name})."
+        ) from e
+
+    try:
+        return generate_financial_plan_ppt(workflow_state)
+    except PptTemplateError as e:
+        raise FinancialPlanDependencyError(str(e)) from e
+    except PptDependencyError as e:
+        raise FinancialPlanDependencyError(str(e)) from e
+
+
+def run_financial_plan_for_client(
+    client_payload: dict,
+    *,
+    include_workflow_state: bool = True,
+) -> dict:
     """
     client_payload: same shape as Armstrong `client_data` (client_data + investment_details + goals + ...).
     """
@@ -727,7 +762,10 @@ def run_financial_plan_for_client(client_payload: dict) -> dict:
     payload = deepcopy(client_payload)
     raw = run_financial_plan_workflow(payload)
     summary = summarize_plan_state(raw)
-    return {
+    result: dict = {
         "ok": True,
         "summary": summary,
     }
+    if include_workflow_state:
+        result["workflow_state"] = json_safe_workflow_state(raw)
+    return result

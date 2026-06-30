@@ -193,7 +193,7 @@ class PPTBuilder:
             elif ft in ("lumpsum_from_liquid", "lumpsum_from_liquid_partial"):
                 lumpsum_total += fund.get("principal_used_today", fund.get("amount_used", 0))
         return sip_total or None, lumpsum_total or None
-
+    
     def _build_funding_text(self, edu_data):
       if edu_data is None:
           return "No goal planned"
@@ -1632,7 +1632,160 @@ class PPTBuilder:
                         para.text = f"{corpus_in_crores} Crores"
                 break
 
-        return True 
+        return True
+
+    def build_term_cover_slide(self, slide):
+        """Build Term Cover Required slide with a 2-column centred table.
+
+        Calculates:
+          (+) Present Value of Expenses  = monthly_expenses × 12 / inflation_rate
+          (+) Kid's Education (UG+PG)    = sum of all children's education future costs
+          (+) Current Liabilities        = sum of all loan outstanding balances
+          (-) Existing Cover Value       = sum of maturity_value from insurance_policies
+          (-) Liquidable Assets          = liquid_pool
+              Total Amount               = sum of all above (with signs)
+
+        Returns True always (slide is always built; caller decides whether to keep it).
+        """
+        from pptx.enum.text import MSO_ANCHOR
+        from pptx.util import Inches, Pt
+        from pptx.dml.color import RGBColor
+        from lxml import etree
+
+        print(f"Term Cover: slide: {slide}")
+
+        DARK_TEAL = RGBColor(0x19, 0x62, 0x7A)
+        TEAL_HDR = RGBColor(0x19, 0x62, 0x7A)
+        WHITE = RGBColor(0xFF, 0xFF, 0xFF)
+        TEAL_TEXT = RGBColor(0x19, 0x62, 0x7A)
+        BLACK = RGBColor(0x00, 0x00, 0x00)
+        LIGHT_GRAY = RGBColor(0xF5, 0xF5, 0xF5)
+
+        term_summary = self.final_state.get("term_insurance_summary") or {}
+        if term_summary:
+            pv_of_expenses = term_summary.get("pv_of_expenses", 0)
+            kids_education_cost = term_summary.get("kids_education_cost", 0)
+            current_liabilities = term_summary.get("current_liabilities", 0)
+            existing_cover = term_summary.get("existing_cover", 0)
+            liquidable_assets = term_summary.get("liquidable_assets", 0)
+            total_term_required = term_summary.get("total_term_required", 0)
+        else:
+            client_info = self.final_state.get("required_retirement_corpus", {}).get("client_info", {})
+            monthly_expenses = client_info.get("current_monthly_expenses", 0)
+            inflation_rate = 0.06
+            pv_of_expenses = int(monthly_expenses * 12 / inflation_rate) if inflation_rate else 0
+
+            kids_education_cost = sum(
+                edu.get("future_cost", 0)
+                for edu in self.final_state.get("client_data", {}).get("education_planning_summary", [])
+            )
+
+            current_liabilities = sum(
+                liability.get("outstanding_balance", 0)
+                for liability in self.final_state.get("liabilities", [])
+            )
+
+            existing_cover = sum(
+                policy.get("maturity_value", 0)
+                for policy in self.final_state.get("client_data", {}).get("insurance_policies", [])
+            )
+
+            liquidable_assets = self.final_state.get("liquid_pool", 0)
+
+            total_term_required = (
+                pv_of_expenses
+                + kids_education_cost
+                + current_liabilities
+                - existing_cover
+                - liquidable_assets
+            )
+            total_term_required = max(total_term_required, 0)
+
+        rows = [
+            ("Particulars", "Amount", True, True),
+            ("Present Value of Expenses", convert_currency(pv_of_expenses), False, False),
+            ("(+) Kid's Education (UG+PG)", convert_currency(kids_education_cost), False, False),
+            ("(+) Current Liabilities", convert_currency(current_liabilities), False, False),
+            ("(-) Existing Cover Value", convert_currency(existing_cover), False, False),
+            ("(-) Liquidable Assets", convert_currency(liquidable_assets), False, False),
+            ("Total Amount", convert_currency(total_term_required), True, True),
+        ]
+
+        slide_w = Inches(19.0)
+        slide_h = Inches(10.67)
+        tbl_w = Inches(13.0)
+        col1_w = Inches(7.0)
+        col2_w = tbl_w - col1_w
+        row_h = Inches(0.9)
+        tbl_h = row_h * len(rows)
+        left = (slide_w - tbl_w) // 2
+        top = (slide_h - tbl_h) // 2 + Inches(0.5)
+
+        slide_obj = self.prs.slides[slide]
+        for shape in slide_obj.shapes:
+            if shape.has_text_frame and "term cover" in (shape.text_frame.text or "").lower():
+                tf = shape.text_frame
+                tf.clear()
+                p = tf.paragraphs[0]
+                run = p.add_run()
+                run.text = "Term Cover Required"
+                run.font.name = "Calibri"
+                run.font.size = Pt(36)
+                run.font.bold = True
+                break
+        else:
+            update_text_of_textbox(self.prs, slide, 1, "Term Cover Required")
+
+        shape = slide_obj.shapes.add_table(len(rows), 2, left, top, tbl_w, tbl_h)
+        table = shape.table
+
+        table.columns[0].width = col1_w
+        table.columns[1].width = col2_w
+
+        NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
+
+        def _no_border(cell):
+            tc = cell._tc
+            tcPr = tc.get_or_add_tcPr()
+            for edge in ("lnL", "lnR", "lnT", "lnB"):
+                ln = etree.SubElement(tcPr, f"{{{NS}}}{edge}")
+                ln.set("w", "0")
+                etree.SubElement(ln, f"{{{NS}}}noFill")
+
+        def _set_cell(cell, text, fill_rgb, font_rgb, bold=False, font_pt=Pt(28), align=PP_ALIGN.CENTER):
+            cell.fill.solid()
+            cell.fill.fore_color.rgb = fill_rgb
+            tf = cell.text_frame
+            tf.word_wrap = False
+            tf.margin_left = tf.margin_right = Inches(0.15)
+            p = tf.paragraphs[0]
+            p.alignment = align
+            tf.anchor = MSO_ANCHOR.MIDDLE
+            run = p.add_run() if not p.runs else p.runs[0]
+            run.text = str(text)
+            run.font.name = "Calibri"
+            run.font.size = font_pt
+            run.font.bold = bold
+            run.font.color.rgb = font_rgb
+            _no_border(cell)
+
+        for r_idx, (label, amount, is_header, is_bold) in enumerate(rows):
+            cell_l = table.cell(r_idx, 0)
+            cell_r = table.cell(r_idx, 1)
+
+            if r_idx == 0:
+                _set_cell(cell_l, label, TEAL_HDR, WHITE, bold=True, font_pt=Pt(32))
+                _set_cell(cell_r, amount, WHITE, TEAL_TEXT, bold=True, font_pt=Pt(32))
+            elif is_bold:
+                _set_cell(cell_l, label, WHITE, BLACK, bold=True, font_pt=Pt(28))
+                _set_cell(cell_r, amount, DARK_TEAL, WHITE, bold=True, font_pt=Pt(28))
+            else:
+                fill_l = LIGHT_GRAY if r_idx % 2 == 0 else WHITE
+                _set_cell(cell_l, label, fill_l, BLACK, bold=False, font_pt=Pt(26), align=PP_ALIGN.CENTER)
+                _set_cell(cell_r, amount, DARK_TEAL, WHITE, bold=False, font_pt=Pt(26))
+
+        return True
+
     def build_ppf_slide(self, slide=13):
         """Build PPF (Public Provident Fund) slide - optional, only if PPF data exists.
 

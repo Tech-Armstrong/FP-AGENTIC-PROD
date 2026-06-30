@@ -9,6 +9,7 @@ import {
   Landmark,
   PiggyBank,
   Shield,
+  Download,
   Sparkles,
   Target,
 } from "lucide-react";
@@ -130,7 +131,12 @@ export type RsuPortfolioPreviewEntry = {
   rsu_remaining?: number;
 };
 
-export type PlanResponse = { ok?: boolean; summary?: PlanSummary; detail?: string };
+export type PlanResponse = {
+  ok?: boolean;
+  summary?: PlanSummary;
+  workflow_state?: Record<string, unknown>;
+  detail?: string;
+};
 
 export type PlanOverrides = {
   epf_rate?: number;
@@ -187,6 +193,8 @@ export type PlanTab = {
   /** Values sent to the workflow for this tab (frozen at run kickoff). */
   appliedRates: AppliedRates;
   summary: PlanSummary;
+  /** Full LangGraph state for PPT download (ephemeral — lost on refresh). */
+  workflowState?: Record<string, unknown>;
 };
 
 const STEPS = [
@@ -604,6 +612,7 @@ export function FinancialPlanPanel({
     overrides: PlanOverrides | null;
     appliedRates: AppliedRates;
     summary: PlanSummary;
+    workflowState?: Record<string, unknown>;
     label?: string;
   }) => void;
   educationBlocks?: EducationChildBlock[];
@@ -614,6 +623,7 @@ export function FinancialPlanPanel({
   onRetirementAgeChange: (value: string) => void;
 }) {
   const [loading, setLoading] = React.useState(false);
+  const [pptLoading, setPptLoading] = React.useState(false);
   const [showWarning, setShowWarning] = React.useState(false);
   const [overlayStep, setOverlayStep] = React.useState(0);
   const [error, setError] = React.useState<string | null>(null);
@@ -715,6 +725,7 @@ export function FinancialPlanPanel({
             overrides: null,
             appliedRates: resolveAppliedRates(originalRates, null),
             summary: baseline.summary,
+            workflowState: baseline.workflow_state,
             label: "Original (Airtable)",
           });
         }
@@ -730,6 +741,7 @@ export function FinancialPlanPanel({
               overrides: planOverrides,
               appliedRates: resolveAppliedRates(originalRates, planOverrides),
               summary: edited.summary,
+              workflowState: edited.workflow_state,
               label: "Plan 2",
             });
           }
@@ -742,6 +754,7 @@ export function FinancialPlanPanel({
             overrides: runOverrides,
             appliedRates: resolveAppliedRates(originalRates, runOverrides),
             summary: data.summary,
+            workflowState: data.workflow_state,
           });
         }
       }
@@ -780,7 +793,53 @@ export function FinancialPlanPanel({
     runPlan(education_targets.length ? education_targets : undefined);
   };
 
-  const s = planTabs.find((tab) => tab.id === activeTabId)?.summary;
+  const activeTab = planTabs.find((tab) => tab.id === activeTabId);
+  const s = activeTab?.summary;
+  const activeWorkflowState = activeTab?.workflowState;
+
+  const downloadPpt = async () => {
+    if (!activeWorkflowState) return;
+    setPptLoading(true);
+    setError(null);
+    setStatus({ msg: "Generating PowerPoint…", type: "info" });
+    try {
+      const res = await fetch("/api/financial-plan/ppt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workflow_state: activeWorkflowState }),
+      });
+      if (!res.ok) {
+        let detail = "PPT generation failed";
+        try {
+          const err = (await res.json()) as { detail?: string };
+          if (typeof err.detail === "string") detail = err.detail;
+        } catch {
+          /* non-JSON error body */
+        }
+        throw new Error(detail);
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") ?? "";
+      const match = disposition.match(/filename="?([^";]+)"?/i);
+      const filename = match?.[1] ?? "financial_plan.pptx";
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setStatus({ msg: "PowerPoint downloaded.", type: "success" });
+    } catch (e) {
+      const msg = (e as Error).message;
+      setError(msg);
+      setStatus({ msg, type: "error" });
+    } finally {
+      setPptLoading(false);
+    }
+  };
+
   const sb = s?.spending_behavior;
   const savingPct =
     sb && typeof sb.saving_ratio === "number"
@@ -905,9 +964,33 @@ export function FinancialPlanPanel({
 
           {s ? (
             <div className="rounded-xl border border-slate-200/80 bg-white px-6 py-7 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-              <h2 className="mb-5 text-base font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                Plan review
-              </h2>
+              <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-base font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                  Plan review
+                </h2>
+                {activeWorkflowState ? (
+                  <button
+                    type="button"
+                    onClick={() => void downloadPpt()}
+                    disabled={pptLoading || loading}
+                    className={cn(
+                      "inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700",
+                    )}
+                  >
+                    {pptLoading ? (
+                      <>
+                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-400/40 border-t-slate-700 dark:border-t-slate-200" />
+                        Generating PPT…
+                      </>
+                    ) : (
+                      <>
+                        <Download className="h-4 w-4" />
+                        Download PPT
+                      </>
+                    )}
+                  </button>
+                ) : null}
+              </div>
 
               {/* Financial health */}
               <div className="mb-7">

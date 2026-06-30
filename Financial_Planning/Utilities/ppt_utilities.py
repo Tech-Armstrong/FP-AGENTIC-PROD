@@ -1974,6 +1974,20 @@ def create_table_if_not_exists(presentation, slide_index, table_data, position=N
         print(f"Created new table in slide {slide_index}")
         return True
 
+def find_slide_index_by_text(presentation, *needles: str, case_insensitive: bool = True) -> int | None:
+    """Return first slide index whose text contains any of the given needles."""
+    normalized = [n.lower() for n in needles] if case_insensitive else list(needles)
+    for i, slide in enumerate(presentation.slides):
+        for shape in slide.shapes:
+            if not shape.has_text_frame:
+                continue
+            haystack = shape.text_frame.text or ""
+            if case_insensitive:
+                haystack = haystack.lower()
+            if any(needle in haystack for needle in normalized):
+                return i
+    return None
+
 def show_slide_data(ppt, slide_no):
     slide = ppt.slides[slide_no]
     arr = []
@@ -2736,29 +2750,43 @@ def replace_pie_chart_with_matplotlib(presentation, slide_number, pie_data, titl
     # Get the slide
     slide = presentation.slides[slide_number]
     
-    # Find the pie chart in the slide
+    # Find a pie/doughnut chart (or any chart) to replace with matplotlib image
+    PIE_LIKE_CHART_TYPES = {
+        XL_CHART_TYPE.PIE,
+        XL_CHART_TYPE.PIE_EXPLODED,
+        XL_CHART_TYPE.THREE_D_PIE,
+        XL_CHART_TYPE.THREE_D_PIE_EXPLODED,
+        XL_CHART_TYPE.DOUGHNUT,
+        XL_CHART_TYPE.DOUGHNUT_EXPLODED,
+    }
+
     pie_chart_shape = None
+    any_chart_shape = None
     for shape in slide.shapes:
-        if shape.has_chart:
-            chart = shape.chart
-            # Check if it's a pie chart
-            if chart.chart_type in [XL_CHART_TYPE.PIE, XL_CHART_TYPE.PIE_EXPLODED, 
-                                     XL_CHART_TYPE.THREE_D_PIE, XL_CHART_TYPE.THREE_D_PIE_EXPLODED]:
-                pie_chart_shape = shape
-                break
-    
+        if not shape.has_chart:
+            continue
+        chart = shape.chart
+        if any_chart_shape is None:
+            any_chart_shape = shape
+        if chart.chart_type in PIE_LIKE_CHART_TYPES:
+            pie_chart_shape = shape
+            break
+
+    pie_chart_shape = pie_chart_shape or any_chart_shape
+
     if pie_chart_shape is None:
-        raise ValueError(f"No pie chart found in slide {slide_number}")
-    
-    # Capture position and size of the original chart
-    left = pie_chart_shape.left
-    top = pie_chart_shape.top
-    width = pie_chart_shape.width
-    height = pie_chart_shape.height
-    
-    # Delete the original chart
-    sp = pie_chart_shape._element
-    sp.getparent().remove(sp)
+        # Template may lack a chart placeholder (or slide index drifted) — place chart on the right
+        left = Inches(11.0)
+        top = Inches(2.4)
+        width = Inches(7.5)
+        height = Inches(5.5)
+    else:
+        left = pie_chart_shape.left
+        top = pie_chart_shape.top
+        width = pie_chart_shape.width
+        height = pie_chart_shape.height
+        sp = pie_chart_shape._element
+        sp.getparent().remove(sp)
     
     # Color palette matching the image - Cyan gradient to dark blue
     modern_colors = [

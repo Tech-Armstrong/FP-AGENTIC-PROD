@@ -258,9 +258,11 @@ START
 
 **Nested agent graphs (inside two nodes):** `Financial_Planning/Agent/agent.py` — small ReAct loop (`llm` ↔ `action`) used only inside `risk_appetite_assessment` and `goal_prioritization`, not exposed to CopilotKit.
 
-### 5.6 PPT generator (not in dashboard path)
+### 5.6 PPT generator (dashboard + standalone CLI)
 
-`Financial_Planning/Main/main.py` runs the same `workflow` against persona fixtures and fills PowerPoint templates — **not** called from `backend/airtable_main.py` or the Next app.
+- **Dashboard path:** After **Make plan**, `POST /financial-plan/run` returns `summary` plus JSON-serializable `workflow_state`. The plan review UI stores `workflow_state` on each `PlanTab` (browser memory only). **Download PPT** calls `POST /financial-plan/ppt` with that state; [`Financial_Planning/Utilities/ppt_runner.py`](Financial_Planning/Utilities/ppt_runner.py) fills [`Financial Plan Stencil v2.pptx`](Financial_Planning/PPT_io/PPT_template/) via `PPTBuilder` (extra Azure LLM calls for retirement commentary). Proxied by Next.js at `/api/financial-plan/ppt`.
+- **Standalone CLI:** [`Financial_Planning/Main/main.py`](Financial_Planning/Main/main.py) runs the workflow against a persona fixture (requires `input_data_personas.py`) and writes `.pptx` to `PPT_io/PPT_output/`.
+- **Templates:** `Financial_Planning/PPT_io/PPT_template/*.pptx` must be present on the server host (not tracked in git).
 
 ---
 
@@ -293,13 +295,15 @@ Airtable record
     → optional PlanOverrides: rates → retirement_investments / mutual_funds / rsu_growth_rate; `retirement_age` and `desired_monthly_annuity` → `client_data`
     → workflow.invoke(initial_state)
     → summarize_plan_state(full_state)  (~20 goal rows max in previews)
+    → response: { summary, workflow_state }  (workflow_state held on PlanTab for PPT only)
     → FinancialPlanPanel UI + useCopilotReadable
+    → (optional) POST /financial-plan/ppt { workflow_state } → .pptx download (no workflow re-run)
 ```
 
 | Concern | Current behavior |
 |---------|------------------|
 | Source of truth for inputs | Airtable (read-only in app) |
-| Plan persistence | None server-side; refresh loses plan |
+| Plan persistence | None server-side; refresh loses plan and cached `workflow_state` (PPT download requires re-running Make plan) |
 | Chat thread persistence | `MemorySaver` in agent process only; lost on agent restart |
 | Concurrency | No locking; two simultaneous Make plan runs for same client = two independent invokes, last UI write wins |
 | Stale plan in chat | Readable still shows old `plan_summary` if Airtable data changed but Make plan not re-run |
@@ -435,7 +439,8 @@ Repo-root `.env` is loaded by `agent/main.py`, `backend/airtable_main.py`, and p
 | `POST` | `/api/copilotkit` | CopilotKit run payload | SSE (LangGraph) or adapter stream | `:8000` or Azure |
 | `GET` | `/api/airtable/clients` | — | `{ clients: [{ record_id, name }] }` | `GET :8001/clients` |
 | `GET` | `/api/airtable/clients/[id]` | — | `{ record_id, client_data: {...} }` | `GET :8001/clients/{id}` |
-| `POST` | `/api/financial-plan/run` | `{ record_id, education_targets?, overrides?: { epf_rate?, ppf_rate?, nps_rate?, mf_expected_return?, rsu_growth_rate?, desired_monthly_annuity?, retirement_age? } }` | `{ ok, summary }` or `{ detail }` | `POST :8001/financial-plan/run` |
+| `POST` | `/api/financial-plan/run` | `{ record_id, education_targets?, overrides?: { epf_rate?, ppf_rate?, nps_rate?, mf_expected_return?, rsu_growth_rate?, desired_monthly_annuity?, retirement_age? } }` | `{ ok, summary, workflow_state }` or `{ detail }` | `POST :8001/financial-plan/run` |
+| `POST` | `/api/financial-plan/ppt` | `{ workflow_state }` (from prior Make plan) | `.pptx` binary or `{ detail }` | `POST :8001/financial-plan/ppt` |
 | `GET` | `/api/rsu-market-data` | — | RSU payload JSON | `GET :8001/rsu-market-data` |
 | `POST` | `/api/rsu-refresh` | optional tickers | refresh result | `POST :8001/rsu-refresh` |
 | `GET` | `/api/rsu/market-data` | `?ticker=` | legacy | `GET :8001/rsu/market-data` |
@@ -455,7 +460,8 @@ Repo-root `.env` is loaded by `agent/main.py`, `backend/airtable_main.py`, and p
 | `GET` | `/health` | — | `{ status: "ok" }` |
 | `GET` | `/clients` | — | `{ clients: [...] }` |
 | `GET` | `/clients/{record_id}` | — | `{ record_id, client_data }` |
-| `POST` | `/financial-plan/run` | `{ record_id, education_targets?, overrides?: PlanOverrides }` (rates → investments; `rsu_growth_rate` → `investment_details.rsu_growth_rate`; `retirement_age` / `desired_monthly_annuity` → `client_data`) | `{ ok: true, summary: {...} }` or HTTP error |
+| `POST` | `/financial-plan/run` | `{ record_id, education_targets?, overrides?: PlanOverrides }` (rates → investments; `rsu_growth_rate` → `investment_details.rsu_growth_rate`; `retirement_age` / `desired_monthly_annuity` → `client_data`) | `{ ok: true, summary: {...}, workflow_state: {...} }` or HTTP error |
+| `POST` | `/financial-plan/ppt` | `{ workflow_state }` | `.pptx` attachment or HTTP error |
 | `GET` | `/rsu-market-data` | — | parquet-derived JSON |
 | `POST` | `/rsu-refresh` | `{ tickers?: string[] }` | refresh metadata |
 | `GET` | `/rsu/market-data` | query `ticker` | legacy |
