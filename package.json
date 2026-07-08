@@ -5,8 +5,8 @@
   "description": "AI dashboard assistant powered by CopilotKit — ask questions about your data in natural language.",
   "scripts": {
     "dev": "next dev --turbopack",
-    "dev:all": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/start-dev.ps1",
-    "start:app": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/start-dev.ps1",
+    "dev:all": "node scripts/start-dev-platform.mjs",
+    "start:app": "node scripts/start-dev-platform.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

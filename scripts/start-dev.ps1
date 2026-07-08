@@ -22,10 +22,37 @@ if (-not (Test-Path ".env")) {
 
 $venvPython = Join-Path $RepoRoot ".venv\Scripts\python.exe"
 
-function Ensure-Venv {
+function Get-SystemPython {
+    $resolved = node (Join-Path $PSScriptRoot "resolvePython.mjs")
+    if ($LASTEXITCODE -ne 0) {
+        throw $resolved
+    }
+    return $resolved.Trim()
+}
+
+function Test-VenvPythonVersion {
     if (-not (Test-Path $venvPython)) {
-        Write-Step "Creating Python virtual environment (.venv)"
-        python -m venv .venv
+        return
+    }
+    & $venvPython -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)" 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        $version = & $venvPython --version 2>&1
+        throw ".venv uses $version but Python 3.10+ is required. Remove-Item -Recurse -Force .venv and re-run."
+    }
+}
+
+function Ensure-Venv {
+    $systemPython = Get-SystemPython
+    if (-not (Test-Path $venvPython)) {
+        Write-Step "Creating Python virtual environment (.venv) with $(& $systemPython --version 2>&1)"
+        if ($systemPython -match " ") {
+            $parts = $systemPython -split " ", 2
+            & $parts[0] $parts[1] -m venv .venv
+        } else {
+            & $systemPython -m venv .venv
+        }
+    } else {
+        Test-VenvPythonVersion
     }
     $pipCheck = & $venvPython -m pip --version 2>$null
     if (-not $pipCheck) {
@@ -36,6 +63,9 @@ function Ensure-Venv {
 
 if (-not $SkipInstall) {
     Ensure-Venv
+
+    Write-Step "Upgrading pip in .venv"
+    & $venvPython -m pip install --upgrade pip
 
     Write-Step "Installing Python dependencies (backend-airtable + agent + OCR service)"
     & $venvPython -m pip install -r requirements.txt
@@ -49,6 +79,8 @@ if (-not $SkipInstall) {
 if (-not (Test-Path $venvPython)) {
     throw "Virtual environment missing at .venv. Run without -SkipInstall first."
 }
+
+Test-VenvPythonVersion
 
 $processes = @()
 

@@ -26,6 +26,8 @@ unless a plan explicitly says to.
 
 ## Run locally
 
+**Prerequisites:** Node.js 20+, **Python 3.10+** (required by `langchain>=1.0`). On macOS with only the system Python 3.9: `brew install python@3.12`.
+
 Three terminals (full experience):
 ```bash
 # Terminal 1 — chat agent :8000
@@ -35,7 +37,8 @@ pip install -r backend/requirements.txt && python backend-airtable/main.py
 # Terminal 3 — Next :3000
 npm install && npm run dev
 ```
-Helper: `npm run dev:all` (→ `scripts/start-dev.ps1`) starts the stack on Windows.
+Helper: `npm run dev:all` starts the stack (→ `scripts/start-dev.sh` on macOS/Linux,
+`scripts/start-dev.ps1` on Windows).
 Chat-only needs terminals 1+3; Make plan needs terminal 2. Set repo-root `.env` from `.env.example`.
 
 Tests: `npm test` (vitest), `npm run test:agent` (pytest in `agent/tests`).

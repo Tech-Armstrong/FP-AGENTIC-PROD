@@ -11,13 +11,20 @@ AI-powered financial planning dashboard with a Copilot sidebar: browse client re
 
 ## How to run locally
 
-**One command (Windows):** from the repo root, after copying `.env`:
+**Prerequisites:** Node.js 20+, **Python 3.10+** (`langchain>=1.0`). macOS ships with Python 3.9 — install a newer one first:
+
+```bash
+brew install python@3.12
+rm -rf .venv   # if you already created a 3.9 venv
+```
+
+**One command:** from the repo root, after copying `.env`:
 
 ```powershell
 npm run dev:all
 ```
 
-Or: `.\scripts\start-dev.ps1` (add `-SkipInstall` to skip `pip`/`npm` on restarts). On macOS/Linux: `chmod +x scripts/start-dev.sh && ./scripts/start-dev.sh`.
+Or: `npm run dev:all` (cross-platform). Direct scripts: `.\scripts\start-dev.ps1` on Windows (add `-SkipInstall` to skip `pip`/`npm` on restarts); `chmod +x scripts/start-dev.sh && ./scripts/start-dev.sh` on macOS/Linux.
 
 This creates `.venv`, installs Python and npm deps if needed, and starts the OCR policy service (:8010), LangGraph agent (:8000), Airtable API (:8001), and Next.js (:3000). Press Enter in the launcher window (Windows) or Ctrl+C (bash) to stop.
 

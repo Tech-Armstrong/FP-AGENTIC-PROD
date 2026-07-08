@@ -21,16 +21,33 @@ if [[ ! -f .env ]]; then
 fi
 
 VENV_PYTHON="$ROOT/.venv/bin/python"
-VENV_PIP="$ROOT/.venv/bin/pip"
+
+require_supported_venv() {
+  if [[ ! -x "$VENV_PYTHON" ]]; then
+    return 0
+  fi
+  if ! "$VENV_PYTHON" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)'; then
+    echo "error: .venv uses $($VENV_PYTHON --version 2>&1), but Python 3.10+ is required." >&2
+    echo "  rm -rf .venv && npm run dev:all" >&2
+    exit 1
+  fi
+}
 
 if [[ "$SKIP_INSTALL" == false ]]; then
+  SYSTEM_PYTHON="$(node "$ROOT/scripts/resolvePython.mjs")"
+
   if [[ ! -x "$VENV_PYTHON" ]]; then
-    step "Creating Python virtual environment (.venv)"
-    python3 -m venv .venv
+    step "Creating Python virtual environment (.venv) with $("$SYSTEM_PYTHON" --version 2>&1)"
+    "$SYSTEM_PYTHON" -m venv .venv
+  else
+    require_supported_venv
   fi
 
+  step "Upgrading pip in .venv"
+  "$VENV_PYTHON" -m pip install --upgrade pip
+
   step "Installing Python dependencies (backend-airtable + agent + OCR service)"
-  "$VENV_PIP" install -r requirements.txt
+  "$VENV_PYTHON" -m pip install -r requirements.txt
 
   if [[ ! -d node_modules ]]; then
     step "Installing npm dependencies"
@@ -42,6 +59,8 @@ if [[ ! -x "$VENV_PYTHON" ]]; then
   echo "error: virtual environment missing at .venv. Run without --skip-install first." >&2
   exit 1
 fi
+
+require_supported_venv
 
 cleanup() {
   echo ""
