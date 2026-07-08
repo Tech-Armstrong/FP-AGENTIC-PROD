@@ -22,6 +22,16 @@ import { EducationPlanningSection } from "./EducationPlanningSection";
 import { buildEducationPlanningBlocks, type EducationPlanningPreviewRow } from "@/lib/educationPlanningView";
 import type { EducationTargetYears } from "@/lib/educationTargetYear";
 import {
+  buildPlanInputSnapshot,
+  deriveRequiredPlanFields,
+  nextPlanTabLabel,
+  parseRateToDecimal,
+  planInputsChanged,
+  rateDecimalsMatch,
+  validatePlanInputsComplete,
+  type PlanInputSnapshot,
+} from "@/lib/planInputValidation";
+import {
   DEFAULT_RSU_GROWTH_RATE,
   projectRsuVestingTranches,
   sumProjectedRsuValue,
@@ -113,24 +123,6 @@ function formatRateDisplay(decimal: number): string {
 
 function decimalToPctInput(rate: number): string {
   return (rate * 100).toFixed(2);
-}
-
-function parsePctInput(raw: string): number | null {
-  const cleaned = raw.replace(/[%\s]/g, "").trim();
-  if (!cleaned) return null;
-  const n = Number(cleaned);
-  return Number.isFinite(n) && n >= 0 ? n : null;
-}
-
-/** Normalize UI percentage to decimal (9 → 0.09), matching backend _normalize_rate. */
-function parseRateToDecimal(raw: string): number | null {
-  const n = parsePctInput(raw);
-  if (n === null) return null;
-  return n > 1 ? n / 100 : n;
-}
-
-function rateDecimalsMatch(a: number, b: number): boolean {
-  return Math.round(a * 10000) === Math.round(b * 10000);
 }
 
 function buildPlanChangeEntries(
@@ -286,18 +278,6 @@ function buildPlanOverridesForRun(
     }
   }
   return Object.keys(overrides).length > 0 ? overrides : null;
-}
-
-function planTabLabel(
-  tabs: PlanTab[],
-  overrides: PlanOverrides | null,
-): string {
-  if (!overrides || Object.keys(overrides).length === 0) {
-    return "Original (Airtable)";
-  }
-  const hasOriginal = tabs.some((t) => t.overrides === null);
-  const overrideCount = tabs.filter((t) => t.overrides !== null).length;
-  return `Plan ${overrideCount + (hasOriginal ? 2 : 1)}`;
 }
 
 type RsuTickerPrice = {
@@ -953,23 +933,28 @@ export function ClientsDashboard() {
     setNpsRatePct(synced.nps);
     setMfRatePct(synced.mf);
     setRsuGrowthRatePct(synced.rsu);
+    setEducationTargets(activePlanTab.inputSnapshot.educationTargets);
+    setDesiredMonthlyAnnuity(activePlanTab.inputSnapshot.desiredMonthlyAnnuity);
+    setRetirementAgeInput(activePlanTab.inputSnapshot.retirementAge);
   }, [activePlanTabId, activePlanTab]);
 
   const handlePlanComplete = (payload: {
     overrides: PlanOverrides | null;
     appliedRates: AppliedRates;
+    inputSnapshot: PlanInputSnapshot;
     summary: PlanSummary;
     workflowState?: Record<string, unknown>;
     label?: string;
   }) => {
     setPlanTabs((prev) => {
       const id = `plan-${Date.now()}-${prev.length}`;
-      const label = payload.label ?? planTabLabel(prev, payload.overrides);
+      const label = payload.label ?? nextPlanTabLabel(prev.length);
       const tab: PlanTab = {
         id,
         label,
         overrides: payload.overrides,
         appliedRates: payload.appliedRates,
+        inputSnapshot: payload.inputSnapshot,
         summary: payload.summary,
         workflowState: payload.workflowState,
       };
@@ -1141,6 +1126,37 @@ export function ClientsDashboard() {
       ? (activePlanSummary!.real_estate_preview as RealEstateProperty[])
       : inv?.real_estate_investment) ?? [];
 
+  const requiredPlanFields = deriveRequiredPlanFields(detail, educationBlocks);
+  const currentInputSnapshot: PlanInputSnapshot = buildPlanInputSnapshot({
+    rates: {
+      epf: epfRatePct,
+      ppf: ppfRatePct,
+      nps: npsRatePct,
+      mf: mfRatePct,
+      rsu: rsuGrowthRatePct,
+    },
+    educationTargets,
+    desiredMonthlyAnnuity,
+    retirementAge: retirementAgeInput,
+  });
+  const activeTabSnapshot = activePlanTab?.inputSnapshot ?? null;
+  const planInputValidation = validatePlanInputsComplete(
+    currentInputSnapshot,
+    requiredPlanFields,
+  );
+  const makePlanBlockReason =
+    !planInputValidation.ok
+      ? `Fill all plan inputs before generating the plan: ${planInputValidation.missing.join(", ")}.`
+      : planTabs.length > 0 &&
+          activeTabSnapshot &&
+          !planInputsChanged(
+            currentInputSnapshot,
+            activeTabSnapshot,
+            requiredPlanFields,
+          )
+        ? "Change at least one input to create a new plan version."
+        : null;
+
   const detailTabs = (
     ["overview", "kids", ...(hasSpouse ? (["spouse"] as const) : []), "liabilities"] as const
   );
@@ -1200,6 +1216,8 @@ export function ClientsDashboard() {
               onDesiredMonthlyAnnuityChange={setDesiredMonthlyAnnuity}
               retirementAge={retirementAgeInput}
               onRetirementAgeChange={setRetirementAgeInput}
+              makePlanBlockReason={makePlanBlockReason}
+              currentInputSnapshot={currentInputSnapshot}
             />
 
             {/* ── Net Worth + Portfolio row ── */}

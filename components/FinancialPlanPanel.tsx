@@ -15,6 +15,10 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { EducationChildBlock } from "@/lib/educationPlanningView";
+import {
+  nextPlanTabLabel,
+  type PlanInputSnapshot,
+} from "@/lib/planInputValidation";
 import { SsyTrackerSection, type SsySummaryEntry } from "./SsyTrackerSection";
 import { PieChart } from "./generative-ui/PieChart";
 
@@ -192,6 +196,7 @@ export type PlanTab = {
   overrides: PlanOverrides | null;
   /** Values sent to the workflow for this tab (frozen at run kickoff). */
   appliedRates: AppliedRates;
+  inputSnapshot: PlanInputSnapshot;
   summary: PlanSummary;
   /** Full LangGraph state for PPT download (ephemeral — lost on refresh). */
   workflowState?: Record<string, unknown>;
@@ -496,7 +501,15 @@ function FundingTable({ rows }: { rows: FundedFromRow[] }) {
   );
 }
 
-function PlanWarningOverlay({ onClose }: { onClose: () => void }) {
+function PlanWarningOverlay({
+  title,
+  message,
+  onClose,
+}: {
+  title: string;
+  message: string;
+  onClose: () => void;
+}) {
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm"
@@ -509,11 +522,10 @@ function PlanWarningOverlay({ onClose }: { onClose: () => void }) {
           id="plan-warning-title"
           className="mb-4 text-lg font-bold text-slate-900 dark:text-slate-100"
         >
-          Education target required
+          {title}
         </h2>
         <p className="mb-6 text-[0.9rem] text-slate-600 dark:text-slate-300">
-          Please enter the education target amount for each child in the Education Planning section
-          before generating the plan.
+          {message}
         </p>
         <button
           type="button"
@@ -600,6 +612,8 @@ export function FinancialPlanPanel({
   onDesiredMonthlyAnnuityChange,
   retirementAge,
   onRetirementAgeChange,
+  makePlanBlockReason,
+  currentInputSnapshot,
 }: {
   recordId: string | null;
   disabled?: boolean;
@@ -611,6 +625,7 @@ export function FinancialPlanPanel({
   onPlanComplete: (payload: {
     overrides: PlanOverrides | null;
     appliedRates: AppliedRates;
+    inputSnapshot: PlanInputSnapshot;
     summary: PlanSummary;
     workflowState?: Record<string, unknown>;
     label?: string;
@@ -621,10 +636,15 @@ export function FinancialPlanPanel({
   onDesiredMonthlyAnnuityChange: (value: string) => void;
   retirementAge: string;
   onRetirementAgeChange: (value: string) => void;
+  makePlanBlockReason?: string | null;
+  currentInputSnapshot: PlanInputSnapshot;
 }) {
   const [loading, setLoading] = React.useState(false);
   const [pptLoading, setPptLoading] = React.useState(false);
-  const [showWarning, setShowWarning] = React.useState(false);
+  const [warningOverlay, setWarningOverlay] = React.useState<{
+    title: string;
+    message: string;
+  } | null>(null);
   const [overlayStep, setOverlayStep] = React.useState(0);
   const [error, setError] = React.useState<string | null>(null);
   const [status, setStatus] = React.useState<{
@@ -707,56 +727,20 @@ export function FinancialPlanPanel({
     setError(null);
     setStatus({ msg: "Generating financial plan…", type: "info" });
     try {
-      const isFirstRun = planTabs.length === 0;
-      const hasEdits = Boolean(
-        planOverrides && Object.keys(planOverrides).length > 0,
-      );
-
-      if (isFirstRun) {
-        // Intentional two-run on first edit: Original (Airtable) always runs first;
-        // if rates were edited, a second pass with overrides creates Plan 2 (~1–3 min extra).
-        setStatus({
-          msg: "Generating original plan (Airtable baseline)…",
-          type: "info",
+      const runOverrides =
+        planOverrides && Object.keys(planOverrides).length > 0
+          ? planOverrides
+          : null;
+      const data = await postPlanRun(runOverrides, educationTargetsPayload);
+      if (data.summary) {
+        onPlanComplete({
+          overrides: runOverrides,
+          appliedRates: resolveAppliedRates(originalRates, runOverrides),
+          inputSnapshot: currentInputSnapshot,
+          summary: data.summary,
+          workflowState: data.workflow_state,
+          label: nextPlanTabLabel(planTabs.length),
         });
-        const baseline = await postPlanRun(null, educationTargetsPayload);
-        if (baseline.summary) {
-          onPlanComplete({
-            overrides: null,
-            appliedRates: resolveAppliedRates(originalRates, null),
-            summary: baseline.summary,
-            workflowState: baseline.workflow_state,
-            label: "Original (Airtable)",
-          });
-        }
-
-        if (hasEdits && planOverrides) {
-          setStatus({
-            msg: "Generating edited scenario (Plan 2)…",
-            type: "info",
-          });
-          const edited = await postPlanRun(planOverrides, educationTargetsPayload);
-          if (edited.summary) {
-            onPlanComplete({
-              overrides: planOverrides,
-              appliedRates: resolveAppliedRates(originalRates, planOverrides),
-              summary: edited.summary,
-              workflowState: edited.workflow_state,
-              label: "Plan 2",
-            });
-          }
-        }
-      } else {
-        const runOverrides = hasEdits && planOverrides ? planOverrides : null;
-        const data = await postPlanRun(runOverrides, educationTargetsPayload);
-        if (data.summary) {
-          onPlanComplete({
-            overrides: runOverrides,
-            appliedRates: resolveAppliedRates(originalRates, runOverrides),
-            summary: data.summary,
-            workflowState: data.workflow_state,
-          });
-        }
       }
 
       setStatus({
@@ -774,17 +758,15 @@ export function FinancialPlanPanel({
 
   const onMakePlanClick = () => {
     if (!recordId) return;
-    const blocks = educationBlocks ?? [];
-    const t = educationTargets ?? {};
-    const missing = blocks.some(
-      (b) =>
-        parseAmt(t[b.name]?.ug) == null ||
-        (b.hasPg && parseAmt(t[b.name]?.pg) == null),
-    );
-    if (missing) {
-      setShowWarning(true);
+    if (makePlanBlockReason) {
+      setWarningOverlay({
+        title: "Make plan unavailable",
+        message: makePlanBlockReason,
+      });
       return;
     }
+    const blocks = educationBlocks ?? [];
+    const t = educationTargets ?? {};
     const education_targets = blocks.map((b) => ({
       name_of_kid: b.name,
       ug_target_amount: parseAmt(t[b.name]?.ug),
@@ -860,7 +842,13 @@ export function FinancialPlanPanel({
   return (
     <>
       {loading ? <PlanGeneratingOverlay activeStep={overlayStep} /> : null}
-      {showWarning ? <PlanWarningOverlay onClose={() => setShowWarning(false)} /> : null}
+      {warningOverlay ? (
+        <PlanWarningOverlay
+          title={warningOverlay.title}
+          message={warningOverlay.message}
+          onClose={() => setWarningOverlay(null)}
+        />
+      ) : null}
 
       <div className="mb-6 overflow-hidden rounded-xl border border-slate-200 bg-[#f0f4f8] shadow-sm dark:border-slate-700 dark:bg-slate-900/50">
         <div className="flex flex-wrap items-end justify-between gap-3 border-b-2 border-[#1a365d] bg-white px-5 py-4 shadow-sm dark:border-sky-800 dark:bg-slate-900">
@@ -902,7 +890,8 @@ export function FinancialPlanPanel({
           <button
             type="button"
             onClick={onMakePlanClick}
-            disabled={disabled || loading || !recordId}
+            disabled={disabled || loading || !recordId || Boolean(makePlanBlockReason)}
+            title={makePlanBlockReason ?? undefined}
             className={cn(
               "inline-flex shrink-0 items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white transition",
               "bg-[#2b6cb0] hover:bg-[#2c5282] disabled:cursor-not-allowed disabled:opacity-50",

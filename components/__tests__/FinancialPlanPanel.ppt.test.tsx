@@ -9,12 +9,20 @@ import {
   type PlanTab,
   type PlanSummary,
 } from "../FinancialPlanPanel";
+import type { PlanInputSnapshot } from "@/lib/planInputValidation";
 
 const baseSummary: PlanSummary = {
   client_name: "Test Client",
   spending_behavior: { saving_ratio: 0.25, expense_ratio: 0.75, red_flag: false },
   liquidity_flag: "OK",
   flexibility: "Medium",
+};
+
+const baseSnapshot: PlanInputSnapshot = {
+  rates: { epf: "", ppf: "", nps: "", mf: "", rsu: "" },
+  educationTargets: {},
+  desiredMonthlyAnnuity: "",
+  retirementAge: "60",
 };
 
 function renderPanel(planTabs: PlanTab[]) {
@@ -32,6 +40,8 @@ function renderPanel(planTabs: PlanTab[]) {
       onDesiredMonthlyAnnuityChange={() => {}}
       retirementAge="60"
       onRetirementAgeChange={() => {}}
+      makePlanBlockReason={null}
+      currentInputSnapshot={baseSnapshot}
     />,
   );
 }
@@ -68,6 +78,7 @@ describe("FinancialPlanPanel PPT download", () => {
         label: "Original",
         overrides: null,
         appliedRates: emptyAppliedRates(),
+        inputSnapshot: baseSnapshot,
         summary: baseSummary,
         workflowState: { client_data: { client_data: { name: "Test" } } },
       },
@@ -82,6 +93,7 @@ describe("FinancialPlanPanel PPT download", () => {
         label: "Original",
         overrides: null,
         appliedRates: emptyAppliedRates(),
+        inputSnapshot: baseSnapshot,
         summary: baseSummary,
       },
     ]);
@@ -96,6 +108,7 @@ describe("FinancialPlanPanel PPT download", () => {
         label: "Original",
         overrides: null,
         appliedRates: emptyAppliedRates(),
+        inputSnapshot: baseSnapshot,
         summary: baseSummary,
         workflowState,
       },
