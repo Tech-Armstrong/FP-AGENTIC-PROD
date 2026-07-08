@@ -15,7 +15,12 @@ from pptx.dml.color import RGBColor
 from lxml import etree
 from pydantic import BaseModel, Field
 from pptx.util import Inches
-from Financial_Planning.Utilities.utility_functions import convert_currency, analyze_asset_portfolio, sip_required
+from Financial_Planning.Utilities.utility_functions import (
+    convert_currency,
+    analyze_asset_portfolio,
+    sip_required,
+    sum_life_insurance_cover,
+)
 from Financial_Planning.RSU.webscrapper import load_rsu_market_data
 from Financial_Planning.RSU.constants import get_rsu_growth_rate
 
@@ -1641,7 +1646,7 @@ class PPTBuilder:
           (+) Present Value of Expenses  = monthly_expenses × 12 / inflation_rate
           (+) Kid's Education (UG+PG)    = sum of all children's education future costs
           (+) Current Liabilities        = sum of all loan outstanding balances
-          (-) Existing Cover Value       = sum of maturity_value from insurance_policies
+          (-) Existing Cover Value       = sum of life_insurance[].coverage_value
           (-) Liquidable Assets          = liquid_pool
               Total Amount               = sum of all above (with signs)
 
@@ -1685,9 +1690,8 @@ class PPTBuilder:
                 for liability in self.final_state.get("liabilities", [])
             )
 
-            existing_cover = sum(
-                policy.get("maturity_value", 0)
-                for policy in self.final_state.get("client_data", {}).get("insurance_policies", [])
+            existing_cover = sum_life_insurance_cover(
+                self.final_state.get("client_data", {}),
             )
 
             liquidable_assets = self.final_state.get("liquid_pool", 0)

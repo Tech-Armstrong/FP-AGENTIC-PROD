@@ -37,6 +37,22 @@ def calculate_future_value(present_value, annual_rate, years):
             return present_value
         return present_value * ((1 + annual_rate) ** years)
 
+
+def sum_life_insurance_cover(client_data: dict | None) -> float:
+    """Sum life/term cover from mapped Airtable life_insurance rows (not medical)."""
+    total = 0.0
+    for policy in (client_data or {}).get("life_insurance", []):
+        if not isinstance(policy, dict):
+            continue
+        raw = policy.get("coverage_value")
+        if raw is None or raw == "":
+            continue
+        try:
+            total += float(raw)
+        except (TypeError, ValueError):
+            continue
+    return total
+
 def calculate_present_value_annuity(annual_payment, discount_rate, years):
         """Calculate present value of annuity (series of payments)"""
         if years <= 0 or discount_rate == 0:

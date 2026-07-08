@@ -19,7 +19,14 @@ What this file contains and processes:
 
 # basic calculations nodes: calculate age, add_goals, asset_basket_classification, calculate_total_asset_value, calculate_fixed_assets_value, calculate_asset_percentages_and_ratios, invest_monthly_surplus
 from Financial_Planning.Models.client_data_state import ClientState
-from Financial_Planning.Utilities.utility_functions import (fv_monthly, months_to_close, _add_months, present_loans_no_allocation, calculate_current_value)
+from Financial_Planning.Utilities.utility_functions import (
+    fv_monthly,
+    months_to_close,
+    _add_months,
+    present_loans_no_allocation,
+    calculate_current_value,
+    sum_life_insurance_cover,
+)
 from datetime import datetime, date
 
 def calculate_age(state: ClientState): # calculates ages of all the individual mentioned in the client data
@@ -691,10 +698,7 @@ def calculate_term_insurance_requirement(state: ClientState):
         for liability in state.get('liabilities', [])
     )
 
-    existing_cover = sum(
-        policy.get('maturity_value', 0)
-        for policy in state.get('client_data', {}).get('insurance_policies', [])
-    )
+    existing_cover = sum_life_insurance_cover(state.get('client_data', {}))
 
     liquidable_assets = state.get('liquid_pool', 0)
 
