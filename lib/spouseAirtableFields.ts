@@ -84,7 +84,7 @@ export function parseSpouseFieldValue(
 export function flattenSpouseFieldToAirtable(
   uiPath: SpouseUiFieldPath,
   rawValue: string,
-): Record<SpouseAirtableFieldKey, string | number | null> {
+): Partial<Record<SpouseAirtableFieldKey, string | number | null>> {
   const airtableKey = uiPathToAirtableKey(uiPath);
   return { [airtableKey]: parseSpouseFieldValue(airtableKey, rawValue) };
 }
@@ -194,8 +194,9 @@ export function spouseValueToInput(uiPath: SpouseUiFieldPath, spouse: SpouseData
       : "";
   }
   if (uiPath === "fd_bond.interest_rate") {
-    return spouse.fd_bond?.interest_rate != null
-      ? String(Number((spouse.fd_bond.interest_rate * 100).toFixed(4)))
+    const rate = spouse.fd_bond?.interest_rate;
+    return rate != null
+      ? String(Number((Number(rate) * 100).toFixed(4)))
       : "";
   }
   if (uiPath === "fd_bond.maturity_date") {

@@ -15,7 +15,7 @@ import {
   emptyAppliedRates,
 } from "./FinancialPlanPanel";
 import { DashboardSidebar } from "./DashboardSidebar";
-import { SpouseDetailsPanel, spouseFromClientData } from "./SpouseDetailsPanel";
+import { SpouseDetailsPanel, spouseFromClientData, type SpouseData } from "./SpouseDetailsPanel";
 import { RealEstateTable, type RealEstateProperty } from "./RealEstateTable";
 import { MarriageGoalsSection, type MarriageGoalRow } from "./MarriageGoalsSection";
 import { EducationPlanningSection } from "./EducationPlanningSection";
