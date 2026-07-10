@@ -43,6 +43,10 @@ from financial_plan_runner import (  # noqa: E402
     generate_ppt_from_workflow_state,
     run_financial_plan_for_client,
 )
+from client_patch_fields import (  # noqa: E402
+    ClientPatchValidationError,
+    validate_client_patch_fields,
+)
 
 # Repo-root .env (same as agent/main.py)
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
@@ -107,6 +111,10 @@ class FinancialPlanRequest(BaseModel):
 
 class FinancialPlanPptRequest(BaseModel):
     workflow_state: dict
+
+
+class ClientPatchRequest(BaseModel):
+    fields: dict[str, str | float | int | None]
 
 
 class PlanOverrides(BaseModel):
@@ -227,6 +235,7 @@ def airtable_record_to_client_data(fields: dict) -> dict:
             "child_dob":   _date_iso(f"{p}dob"),
             "Gender":      _s(f"{p}gender"),
             "investments": investments,
+            "airtable_slot": n,
         })
 
     client_data_block["children"]    = children
@@ -477,13 +486,15 @@ def airtable_record_to_client_data(fields: dict) -> dict:
                 "vesting_schedule": vesting_schedule,
             })
 
-    # ── 12. Education planning ───────────────────────────────────────────────
+  # ── 12. Education planning ───────────────────────────────────────────────
     education_planning = []
-    for idx, child in enumerate(children, start=1):
-        p = f"child_{idx}_"
+    for child in children:
+        slot = child["airtable_slot"]
+        p = f"child_{slot}_"
         education_planning.append({
             "name_of_kid":                   child["child_name"],
             "dob":                           child["child_dob"],
+            "airtable_slot":                 slot,
             "graduation_stream":             _s(f"{p}graduation_stream"),
             "graduation_destination":        _s(f"{p}graduation_destination"),
             "course_duration_ug":            _i(f"{p}course_duration_ug") or None,
@@ -700,14 +711,52 @@ def list_clients():
     return {"clients": clients}
 
 
-@app.get("/clients/{record_id}")
-def get_client_data(record_id: str):
+def _require_airtable_token() -> None:
+    if not AIRTABLE_TOKEN:
+        raise HTTPException(status_code=503, detail="Airtable token is not configured")
+
+
+def fetch_airtable_record_fields(record_id: str) -> dict:
     resp = http_requests.get(f"{AIRTABLE_URL}/{record_id}", headers=AIRTABLE_HEADERS)
     if resp.status_code == 404:
         raise HTTPException(status_code=404, detail="Client record not found in Airtable")
     if resp.status_code != 200:
         raise HTTPException(status_code=502, detail=f"Airtable error: {resp.text}")
-    fields = resp.json().get("fields", {})
+    return resp.json().get("fields", {})
+
+
+def patch_airtable_record(record_id: str, fields: dict) -> dict:
+    logger.info("patch_airtable_record record_id=%s fields=%s", record_id, list(fields))
+    resp = http_requests.patch(
+        f"{AIRTABLE_URL}/{record_id}",
+        headers=AIRTABLE_HEADERS,
+        json={"fields": fields},
+    )
+    if resp.status_code == 404:
+        raise HTTPException(status_code=404, detail="Client record not found in Airtable")
+    if resp.status_code >= 400:
+        raise HTTPException(status_code=502, detail=f"Airtable error: {resp.text}")
+    return resp.json().get("fields", {})
+
+
+@app.get("/clients/{record_id}")
+def get_client_data(record_id: str):
+    _require_airtable_token()
+    fields = fetch_airtable_record_fields(record_id)
+    client_payload = airtable_record_to_client_data(fields)
+    return {"record_id": record_id, "client_data": client_payload}
+
+
+@app.patch("/clients/{record_id}")
+def patch_client_data(record_id: str, body: ClientPatchRequest):
+    _require_airtable_token()
+    try:
+        validated_fields = validate_client_patch_fields(body.fields)
+    except ClientPatchValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    patch_airtable_record(record_id, validated_fields)
+    fields = fetch_airtable_record_fields(record_id)
     client_payload = airtable_record_to_client_data(fields)
     return {"record_id": record_id, "client_data": client_payload}
 

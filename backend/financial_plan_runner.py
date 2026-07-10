@@ -185,6 +185,51 @@ def _education_funding_status(goal: dict) -> str:
     return "not_funded"
 
 
+def _education_goal_side(goal_name: str) -> str | None:
+    parts = str(goal_name or "").split()
+    if len(parts) < 2 or parts[1] not in ("UG", "PG"):
+        return None
+    return parts[1]
+
+
+def _normalize_destination_label(raw) -> str | None:
+    if raw is None:
+        return None
+    normalized = str(raw).strip().lower()
+    if normalized == "domestic":
+        return "Domestic"
+    if normalized == "international":
+        return "International"
+    return None
+
+
+def _education_destination_for_goal(goal: dict, goal_name: str, client_payload: dict) -> str | None:
+    side = _education_goal_side(goal_name)
+    if side is None:
+        return None
+
+    from_goal = _normalize_destination_label(goal.get("destination"))
+    if from_goal:
+        return from_goal
+
+    parts = str(goal_name or "").split()
+    child_name = parts[0] if parts else ""
+    summary = client_payload.get("education_planning_summary") or []
+    if not isinstance(summary, list):
+        return None
+    for entry in summary:
+        if not isinstance(entry, dict):
+            continue
+        if str(entry.get("name") or "").strip() != child_name:
+            continue
+        if str(entry.get("type") or "").strip().upper() != side:
+            continue
+        from_summary = _normalize_destination_label(entry.get("destination"))
+        if from_summary:
+            return from_summary
+    return None
+
+
 def _education_goal_start_end(
     goal_name: str,
     targets_by_child: dict,
@@ -528,6 +573,9 @@ def summarize_plan_state(state: dict) -> dict:
             if edu_start is not None and edu_end is not None:
                 row["start_year"] = edu_start
                 row["end_year"] = edu_end
+            destination = _education_destination_for_goal(g, goal_name, cd)
+            if destination:
+                row["destination"] = destination
             alloc_preview.append(row)
 
     def _last_num(val):

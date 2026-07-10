@@ -1,6 +1,15 @@
 "use client";
 
-/** Nested category groups built in backend/airtable_main.py from flat Airtable fields. */
+import { useCallback, useEffect, useState } from "react";
+import {
+  ALL_SPOUSE_UI_PATHS,
+  flattenSpouseFieldToAirtable,
+  spouseValueToInput,
+  valuesEqualForPath,
+  type SpouseUiFieldPath,
+} from "@/lib/spouseAirtableFields";
+
+/** Nested category groups built in backend-airtable/main.py from flat Airtable fields. */
 export type SpouseNestedCategory = Record<string, string | number | null | undefined>;
 
 export type SpouseData = {
@@ -13,14 +22,7 @@ export type SpouseData = {
   fd_bond?: SpouseNestedCategory;
 };
 
-const FLAT_SCALAR_KEYS = [
-  "spouse_name",
-  "spouse_dob",
-  "spouse_investment_mutual_fund_value",
-  "spouse_investment_direct_equity_value",
-] as const;
-
-const NESTED_CATEGORY_KEYS = ["esop", "provident_fund", "fd_bond"] as const;
+type FieldStatus = "idle" | "saving" | "saved" | "error";
 
 const FLAT_LABELS: Record<string, string> = {
   spouse_name: "Name",
@@ -41,50 +43,60 @@ const SUBTYPE_LABELS: Record<string, string> = {
   current_value: "Current Value",
   monthly_contribution: "Monthly Contribution",
   invested_amount: "Invested Amount",
-  interest_rate: "Interest Rate",
+  interest_rate: "Interest Rate (%)",
   maturity_date: "Maturity Date",
 };
+
+const PERSONAL_PATHS: SpouseUiFieldPath[] = ["spouse_name", "spouse_dob"];
+const INVESTMENT_PATHS: SpouseUiFieldPath[] = [
+  "spouse_investment_mutual_fund_value",
+  "spouse_investment_direct_equity_value",
+];
+const NESTED_SECTIONS: { key: string; label: string; paths: SpouseUiFieldPath[] }[] = [
+  { key: "esop", label: NESTED_LABELS.esop, paths: ["esop.vested", "esop.unvested"] },
+  {
+    key: "provident_fund",
+    label: NESTED_LABELS.provident_fund,
+    paths: ["provident_fund.current_value", "provident_fund.monthly_contribution"],
+  },
+  {
+    key: "fd_bond",
+    label: NESTED_LABELS.fd_bond,
+    paths: ["fd_bond.invested_amount", "fd_bond.interest_rate", "fd_bond.maturity_date"],
+  },
+];
 
 const TH =
   "align-middle whitespace-nowrap px-4 py-2 text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400";
 const TD = "align-middle px-4 py-2 text-gray-700 dark:text-gray-300";
 const ROW = "border-b border-gray-100 dark:border-gray-700";
+const INPUT =
+  "w-full rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-900 focus:border-brand focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100";
 
-function fmtInr(n: number | null | undefined): string {
-  if (n == null || Number.isNaN(n)) return "—";
-  if (n >= 1_00_00_000) return `₹${(n / 1_00_00_000).toFixed(2)}Cr`;
-  if (n >= 1_00_000) return `₹${(n / 1_00_000).toFixed(2)}L`;
-  return `₹${n.toLocaleString("en-IN")}`;
+function pathLabel(uiPath: SpouseUiFieldPath): string {
+  if (uiPath in FLAT_LABELS) return FLAT_LABELS[uiPath];
+  const sub = uiPath.split(".")[1];
+  return SUBTYPE_LABELS[sub] ?? sub.replace(/_/g, " ");
 }
 
-function fmtPct(r: number | null | undefined): string {
-  return r ? `${(r * 100).toFixed(2)}%` : "—";
+function isNumericPath(uiPath: SpouseUiFieldPath): boolean {
+  return (
+    uiPath !== "spouse_name" &&
+    uiPath !== "spouse_dob" &&
+    uiPath !== "fd_bond.maturity_date"
+  );
 }
 
-function formatSubtypeValue(key: string, value: unknown): string {
-  if (value == null || value === "") return "—";
-  if (typeof value === "number") {
-    if (key === "interest_rate") return fmtPct(value);
-    if (key === "monthly_contribution") return `${fmtInr(value)} /mo`;
-    return fmtInr(value);
+function isDatePath(uiPath: SpouseUiFieldPath): boolean {
+  return uiPath === "spouse_dob" || uiPath === "fd_bond.maturity_date";
+}
+
+function draftFromSpouse(spouse: SpouseData): Record<SpouseUiFieldPath, string> {
+  const draft = {} as Record<SpouseUiFieldPath, string>;
+  for (const path of ALL_SPOUSE_UI_PATHS) {
+    draft[path] = spouseValueToInput(path, spouse);
   }
-  return String(value);
-}
-
-function formatFlatValue(key: string, value: unknown): string {
-  if (value == null || value === "") return "—";
-  if (typeof value === "number") return fmtInr(value);
-  return String(value);
-}
-
-function isNumericKey(key: string): boolean {
-  return key !== "spouse_name" && key !== "spouse_dob" && key !== "maturity_date";
-}
-
-function isNestedCategory(value: unknown): value is SpouseNestedCategory {
-  if (value == null) return false;
-  if (Array.isArray(value)) return value.length > 0 && typeof value[0] === "object";
-  return typeof value === "object";
+  return draft;
 }
 
 function SectionLabel({ icon, text }: { icon: string; text: string }) {
@@ -100,184 +112,202 @@ function SectionLabel({ icon, text }: { icon: string; text: string }) {
   );
 }
 
-function FlatFieldsTable({
-  rows,
-}: {
-  rows: { label: string; value: string; numeric?: boolean }[];
-}) {
-  if (!rows.length) return null;
-
-  return (
-    <table className="w-full border-collapse text-xs">
-      <tbody>
-        {rows.map(({ label, value, numeric }) => (
-          <tr key={label} className={ROW}>
-            <td className={`${TD} w-1/2 text-left font-medium text-gray-500 dark:text-gray-400`}>
-              {label}
-            </td>
-            <td
-              className={`${TD} font-semibold text-gray-900 dark:text-gray-100 ${
-                numeric ? "text-right" : "text-left"
-              }`}
-            >
-              {value}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
+function statusText(status: FieldStatus, error?: string): string | null {
+  if (status === "saving") return "Saving…";
+  if (status === "saved") return "Saved";
+  if (status === "error") return error ?? "Save failed";
+  return null;
 }
 
-function NestedCategoryTable({ label, value }: { label: string; value: SpouseNestedCategory | unknown[] }) {
-  if (Array.isArray(value)) {
-    if (!value.length || typeof value[0] !== "object") return null;
-    const columns = Object.keys(value[0] as object);
-    const numericTotals: Record<string, number> = {};
-    columns.forEach((col) => {
-      const sum = value.reduce((s: number, row) => {
-        const v = (row as Record<string, unknown>)[col];
-        return s + (typeof v === "number" ? v : 0);
-      }, 0);
-      if (value.some((r) => typeof (r as Record<string, unknown>)[col] === "number")) {
-        numericTotals[col] = sum;
-      }
-    });
+function statusBorder(status: FieldStatus): string {
+  if (status === "error") return "border-red-400 dark:border-red-500";
+  if (status === "saved") return "border-green-400 dark:border-green-500";
+  if (status === "saving") return "border-blue-300 dark:border-blue-500";
+  return "";
+}
 
-    const colAlign = (col: string, i: number) => {
-      if (i === 0) return "text-left";
-      if (typeof (value[0] as Record<string, unknown>)[col] === "number") return "text-right";
-      return "text-left";
-    };
+export function SpouseDetailsPanel({
+  recordId,
+  spouse,
+  onSpouseSaved,
+  disabled = false,
+}: {
+  recordId: string;
+  spouse: SpouseData;
+  onSpouseSaved: (clientData: Record<string, unknown>) => void;
+  disabled?: boolean;
+}) {
+  const [draft, setDraft] = useState<Record<SpouseUiFieldPath, string>>(() =>
+    draftFromSpouse(spouse),
+  );
+  const [savedBaseline, setSavedBaseline] = useState<Record<SpouseUiFieldPath, string>>(() =>
+    draftFromSpouse(spouse),
+  );
+  const [fieldStatus, setFieldStatus] = useState<Partial<Record<SpouseUiFieldPath, FieldStatus>>>(
+    {},
+  );
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<SpouseUiFieldPath, string>>>({});
+
+  useEffect(() => {
+    const next = draftFromSpouse(spouse);
+    setDraft(next);
+    setSavedBaseline(next);
+    setFieldStatus({});
+    setFieldErrors({});
+    // Reset only when switching clients; field saves update baseline locally.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recordId]);
+
+  const saveField = useCallback(
+    async (uiPath: SpouseUiFieldPath) => {
+      const current = draft[uiPath] ?? "";
+      const baseline = savedBaseline[uiPath] ?? "";
+      if (valuesEqualForPath(uiPath, current, baseline)) return;
+
+      setFieldStatus((prev) => ({ ...prev, [uiPath]: "saving" }));
+      setFieldErrors((prev) => ({ ...prev, [uiPath]: undefined }));
+
+      try {
+        const fields = flattenSpouseFieldToAirtable(uiPath, current);
+        const res = await fetch(`/api/airtable/clients/${recordId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fields }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error ?? `Save failed (${res.status})`);
+        }
+        onSpouseSaved(data.client_data);
+        setSavedBaseline((prev) => ({ ...prev, [uiPath]: current }));
+        setFieldStatus((prev) => ({ ...prev, [uiPath]: "saved" }));
+      } catch (err) {
+        setFieldStatus((prev) => ({ ...prev, [uiPath]: "error" }));
+        setFieldErrors((prev) => ({
+          ...prev,
+          [uiPath]: err instanceof Error ? err.message : "Save failed",
+        }));
+      }
+    },
+    [draft, onSpouseSaved, recordId, savedBaseline],
+  );
+
+  const handleChange = (uiPath: SpouseUiFieldPath, value: string) => {
+    setDraft((prev) => ({ ...prev, [uiPath]: value }));
+    setFieldStatus((prev) => ({ ...prev, [uiPath]: "idle" }));
+  };
+
+  const handleBlur = (uiPath: SpouseUiFieldPath) => {
+    if (!disabled) void saveField(uiPath);
+  };
+
+  const handleKeyDown = (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    uiPath: SpouseUiFieldPath,
+  ) => {
+    if (e.key === "Enter") {
+      e.currentTarget.blur();
+      if (!disabled) void saveField(uiPath);
+    }
+  };
+
+  const renderFieldRow = (uiPath: SpouseUiFieldPath) => {
+    const numeric = isNumericPath(uiPath);
+    const status = fieldStatus[uiPath] ?? "idle";
+    const hint = statusText(status, fieldErrors[uiPath]);
 
     return (
-      <div className="mb-4">
-        <SectionLabel icon="📋" text={label} />
-        <table className="w-full border-collapse text-xs">
-          <thead>
-            <tr className={`bg-gray-50 dark:bg-gray-800 ${ROW}`}>
-              {columns.map((col, i) => (
-                <th key={col} className={`${TH} ${colAlign(col, i)}`}>
-                  {SUBTYPE_LABELS[col] ?? col.replace(/_/g, " ")}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {value.map((row, idx) => (
-              <tr key={idx} className={`${ROW} hover:bg-gray-50 dark:hover:bg-gray-800/50`}>
-                {columns.map((col, i) => (
-                  <td key={col} className={`${TD} ${colAlign(col, i)}`}>
-                    {formatSubtypeValue(col, (row as Record<string, unknown>)[col])}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-          {Object.keys(numericTotals).length > 0 && (
-            <tfoot>
-              <tr className={`bg-gray-50 font-semibold dark:bg-gray-800 ${ROW}`}>
-                {columns.map((col, i) => (
-                  <td
-                    key={col}
-                    className={`${TD} text-gray-900 dark:text-gray-100 ${i === 0 ? "text-left" : "text-right"}`}
-                  >
-                    {i === 0 ? "Total" : numericTotals[col] != null ? fmtInr(numericTotals[col]) : ""}
-                  </td>
-                ))}
-              </tr>
-            </tfoot>
-          )}
-        </table>
-      </div>
+      <tr key={uiPath} className={ROW}>
+        <td className={`${TD} w-1/2 text-left font-medium text-gray-500 dark:text-gray-400`}>
+          {pathLabel(uiPath)}
+        </td>
+        <td className={`${TD} ${numeric ? "text-right" : "text-left"}`}>
+          <input
+            type={isDatePath(uiPath) ? "date" : numeric ? "number" : "text"}
+            min={numeric ? "0" : undefined}
+            step={uiPath === "fd_bond.interest_rate" ? "0.01" : undefined}
+            inputMode={numeric ? "numeric" : undefined}
+            value={draft[uiPath] ?? ""}
+            disabled={disabled || status === "saving"}
+            onChange={(e) => handleChange(uiPath, e.target.value)}
+            onBlur={() => handleBlur(uiPath)}
+            onKeyDown={(e) => handleKeyDown(e, uiPath)}
+            className={`${INPUT} ${numeric ? "text-right" : "text-left"} ${statusBorder(status)}`}
+          />
+          {hint ? (
+            <p
+              className={`mt-1 text-[10px] ${
+                status === "error"
+                  ? "text-red-500"
+                  : status === "saved"
+                    ? "text-green-600 dark:text-green-400"
+                    : "text-gray-400"
+              }`}
+            >
+              {hint}
+            </p>
+          ) : null}
+        </td>
+      </tr>
     );
-  }
-
-  const entries = Object.entries(value).filter(([, v]) => v != null && v !== "");
-  if (!entries.length) return null;
-
-  const total = entries.reduce((s, [, v]) => s + (typeof v === "number" ? v : 0), 0);
-
-  return (
-    <div className="mb-4">
-      <SectionLabel icon="📋" text={label} />
-      <table className="w-full border-collapse text-xs">
-        <thead>
-          <tr className={`bg-gray-50 dark:bg-gray-800 ${ROW}`}>
-            <th className={`${TH} text-left`}>Type</th>
-            <th className={`${TH} text-right`}>Value</th>
-          </tr>
-        </thead>
-        <tbody>
-          {entries.map(([subType, subVal]) => (
-            <tr key={subType} className={`${ROW} hover:bg-gray-50 dark:hover:bg-gray-800/50`}>
-              <td className={`${TD} text-left text-gray-900 dark:text-gray-100`}>
-                {SUBTYPE_LABELS[subType] ?? subType.replace(/_/g, " ")}
-              </td>
-              <td className={`${TD} text-right font-medium text-gray-900 dark:text-gray-100`}>
-                {formatSubtypeValue(subType, subVal)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-        {total > 0 && (
-          <tfoot>
-            <tr className={`bg-gray-50 font-semibold dark:bg-gray-800 ${ROW}`}>
-              <td className={`${TD} text-left text-gray-700 dark:text-gray-300`}>Total</td>
-              <td className={`${TD} text-right text-gray-900 dark:text-gray-100`}>{fmtInr(total)}</td>
-            </tr>
-          </tfoot>
-        )}
-      </table>
-    </div>
-  );
-}
-
-export function SpouseDetailsPanel({ spouse }: { spouse: SpouseData }) {
-  const personalRows: { label: string; value: string; numeric?: boolean }[] = [];
-  const investmentRows: { label: string; value: string; numeric?: boolean }[] = [];
-
-  for (const key of FLAT_SCALAR_KEYS) {
-    const raw = spouse[key];
-    const label = FLAT_LABELS[key];
-    const formatted = formatFlatValue(key, raw);
-    const row = { label, value: formatted, numeric: isNumericKey(key) };
-    if (key === "spouse_name" || key === "spouse_dob") {
-      personalRows.push(row);
-    } else if (raw != null && raw !== "") {
-      investmentRows.push(row);
-    }
-  }
-
-  const nestedBlocks = NESTED_CATEGORY_KEYS.flatMap((key) => {
-    const value = spouse[key];
-    if (!isNestedCategory(value)) return [];
-    return [{ key, label: NESTED_LABELS[key] ?? key, value }];
-  });
+  };
 
   return (
     <div className="spouse-details-panel space-y-4">
+      <p className="text-xs text-gray-500 dark:text-gray-400">
+        Edit spouse fields inline — changes save to Airtable on blur or Enter.
+      </p>
+
       <section>
         <SectionLabel icon="👤" text="Personal Details" />
-        <FlatFieldsTable rows={personalRows} />
+        <table className="w-full border-collapse text-xs">
+          <tbody>{PERSONAL_PATHS.map(renderFieldRow)}</tbody>
+        </table>
       </section>
 
-      {investmentRows.length > 0 && (
-        <section>
-          <SectionLabel icon="💼" text="Spouse Investments" />
-          <FlatFieldsTable rows={investmentRows} />
-        </section>
-      )}
+      <section>
+        <SectionLabel icon="💼" text="Spouse Investments" />
+        <table className="w-full border-collapse text-xs">
+          <tbody>{INVESTMENT_PATHS.map(renderFieldRow)}</tbody>
+        </table>
+      </section>
 
-      {nestedBlocks.length > 0 && (
-        <section className="space-y-0">
-          {nestedBlocks.map(({ key, label, value }) => (
-            <NestedCategoryTable key={key} label={label} value={value} />
-          ))}
-        </section>
-      )}
+      <section className="space-y-4">
+        {NESTED_SECTIONS.map(({ key, label, paths }) => (
+          <div key={key}>
+            <SectionLabel icon="📋" text={label} />
+            <table className="w-full border-collapse text-xs">
+              <thead>
+                <tr className={`bg-gray-50 dark:bg-gray-800 ${ROW}`}>
+                  <th className={`${TH} text-left`}>Field</th>
+                  <th className={`${TH} text-right`}>Value</th>
+                </tr>
+              </thead>
+              <tbody>{paths.map(renderFieldRow)}</tbody>
+            </table>
+          </div>
+        ))}
+      </section>
     </div>
   );
+}
+
+export function spouseFromClientData(clientData: {
+  spouse_name?: string;
+  spouse_dob?: string;
+  spouse?: SpouseData | null;
+}): SpouseData {
+  return {
+    spouse_name: clientData.spouse?.spouse_name ?? clientData.spouse_name ?? "",
+    spouse_dob: clientData.spouse?.spouse_dob ?? clientData.spouse_dob ?? "",
+    spouse_investment_mutual_fund_value:
+      clientData.spouse?.spouse_investment_mutual_fund_value ?? null,
+    spouse_investment_direct_equity_value:
+      clientData.spouse?.spouse_investment_direct_equity_value ?? null,
+    esop: clientData.spouse?.esop ?? {},
+    provident_fund: clientData.spouse?.provident_fund ?? {},
+    fd_bond: clientData.spouse?.fd_bond ?? {},
+  };
 }
 
 export function mergeSpouseData(

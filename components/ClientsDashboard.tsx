@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTheme } from "next-themes";
 import { useCopilotAction, useCopilotReadable } from "@copilotkit/react-core";
 import { SearchResults } from "./generative-ui/SearchResults";
@@ -15,7 +15,7 @@ import {
   emptyAppliedRates,
 } from "./FinancialPlanPanel";
 import { DashboardSidebar } from "./DashboardSidebar";
-import { SpouseDetailsPanel, mergeSpouseData, type SpouseData } from "./SpouseDetailsPanel";
+import { SpouseDetailsPanel, spouseFromClientData } from "./SpouseDetailsPanel";
 import { RealEstateTable, type RealEstateProperty } from "./RealEstateTable";
 import { MarriageGoalsSection, type MarriageGoalRow } from "./MarriageGoalsSection";
 import { EducationPlanningSection } from "./EducationPlanningSection";
@@ -91,6 +91,7 @@ interface ClientDetail {
     education_planning: {
       name_of_kid: string;
       dob: string;
+      airtable_slot?: number;
       graduation_stream: string;
       graduation_destination: string;
       course_duration_ug?: number | null;
@@ -1085,13 +1086,20 @@ export function ClientsDashboard() {
   const medIns     = detail?.client_data?.medical_insurance ?? [];
   const kids       = cd?.children ?? [];
 
-  const hasSpouse = !!(cd?.spouse?.spouse_name || cd?.spouse_name || cd?.spouse?.spouse_dob || cd?.spouse_dob);
+  const spouseData = useMemo(() => spouseFromClientData(cd ?? {}), [cd]);
 
-  const spouseData: SpouseData | null = mergeSpouseData(
-    cd?.spouse,
-    activePlanSummary?.spouse_preview as SpouseData | null | undefined,
-    { spouse_name: cd?.spouse_name, spouse_dob: cd?.spouse_dob },
-  );
+  const handleSpouseSaved = (clientData: Record<string, unknown>) => {
+    setDetail((prev) =>
+      prev
+        ? {
+            ...prev,
+            client_data: clientData as ClientDetail["client_data"],
+          }
+        : prev,
+    );
+  };
+
+  const handleEducationSaved = handleSpouseSaved;
 
   const marriageGoals: MarriageGoalRow[] = (() => {
     const preview = (activePlanSummary?.marriage_goals_preview ?? []) as MarriageGoalRow[];
@@ -1158,7 +1166,7 @@ export function ClientsDashboard() {
         : null;
 
   const detailTabs = (
-    ["overview", "kids", ...(hasSpouse ? (["spouse"] as const) : []), "liabilities"] as const
+    ["overview", "kids", "spouse", "liabilities"] as const
   );
 
   const tabLabel = (tab: (typeof detailTabs)[number]) => {
@@ -1168,9 +1176,6 @@ export function ClientsDashboard() {
     return "Liabilities & Goals";
   };
 
-  useEffect(() => {
-    if (!hasSpouse && activeTab === "spouse") setActiveTab("overview");
-  }, [hasSpouse, activeTab]);
 
   const TAB = "px-4 py-1.5 text-xs font-semibold border-b-2 -mb-px cursor-pointer transition-colors";
   const ACTIVE_TAB = `${TAB} border-blue-900 bg-gray-50 text-blue-900 dark:border-blue-400 dark:bg-gray-800 dark:text-blue-300`;
@@ -1480,12 +1485,14 @@ export function ClientsDashboard() {
                       )} />
                     </>}
 
-                    {eduPlans.length > 0 && <>
+                    {eduPlans.length > 0 && detail && <>
                       <SectionLabel icon="🎓" text="Education Planning" />
                       <EducationPlanningSection
+                        recordId={detail.record_id}
                         blocks={educationBlocks}
                         targets={educationTargets}
                         onTargetChange={handleEduTargetChange}
+                        onEducationSaved={handleEducationSaved}
                       />
                     </>}
 
@@ -1494,14 +1501,12 @@ export function ClientsDashboard() {
                 )}
 
                 {/* ── SPOUSE TAB ── */}
-                {activeTab === "spouse" && (
-                  spouseData ? (
-                    <SpouseDetailsPanel spouse={spouseData} />
-                  ) : (
-                    <p className="py-8 text-center text-xs text-gray-400 dark:text-gray-500">
-                      No spouse information available for this client.
-                    </p>
-                  )
+                {activeTab === "spouse" && detail && (
+                  <SpouseDetailsPanel
+                    recordId={detail.record_id}
+                    spouse={spouseData}
+                    onSpouseSaved={handleSpouseSaved}
+                  />
                 )}
 
                 {/* ── LIABILITIES TAB ── */}

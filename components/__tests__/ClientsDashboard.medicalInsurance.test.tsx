@@ -52,7 +52,7 @@ vi.mock("../DashboardSidebar", () => ({
 
 vi.mock("../SpouseDetailsPanel", () => ({
   SpouseDetailsPanel: () => null,
-  mergeSpouseData: () => null,
+  spouseFromClientData: () => ({}),
 }));
 
 vi.mock("../RealEstateTable", () => ({ RealEstateTable: () => null }));

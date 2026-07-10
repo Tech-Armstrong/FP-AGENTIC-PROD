@@ -26,3 +26,32 @@ export async function GET(
     );
   }
 }
+
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  try {
+    const body = await req.json();
+    const res = await fetch(`${FASTAPI_BASE}/clients/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      return NextResponse.json(
+        { error: data.detail ?? `FastAPI error: ${res.status}` },
+        { status: res.status }
+      );
+    }
+    return NextResponse.json(data);
+  } catch (err) {
+    return NextResponse.json(
+      { error: `Could not reach FastAPI: ${(err as Error).message}` },
+      { status: 502 }
+    );
+  }
+}

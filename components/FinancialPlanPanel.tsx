@@ -40,6 +40,8 @@ type GoalAlloc = {
   corpus_gap?: number;
   target_corpus?: number;
   target_year?: number;
+  /** Education goals only — Domestic / International. */
+  destination?: string;
   /** Education goals only — program start/end for plan card display. */
   start_year?: number | null;
   end_year?: number | null;
@@ -325,6 +327,18 @@ function deriveGoalStatus(g: GoalAlloc): "funded" | "partial_funded" | "not_fund
   const gap = Number(g.corpus_gap ?? 0);
   if (gap > 0) return "partial_funded";
   return "funded";
+}
+
+function isEducationGoal(goalName?: string): boolean {
+  const parts = String(goalName ?? "").trim().split(/\s+/);
+  return parts.length >= 2 && (parts[1] === "UG" || parts[1] === "PG");
+}
+
+function destinationBadgeClass(destination: string): string {
+  if (destination.toLowerCase() === "international") {
+    return "bg-violet-50 text-violet-900 dark:bg-violet-950/50 dark:text-violet-200";
+  }
+  return "bg-sky-50 text-sky-900 dark:bg-sky-950/50 dark:text-sky-200";
 }
 
 function ReviewSectionTitle({
@@ -1401,19 +1415,31 @@ export function FinancialPlanPanel({
                             <strong className="text-[0.95rem] text-slate-900 dark:text-slate-100">
                               {g.goal_name}
                             </strong>
-                            <span
-                              className={cn(
-                                "inline-block rounded-xl px-2.5 py-0.5 text-[0.75rem] font-bold uppercase",
-                                status === "funded" &&
-                                  "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200",
-                                status === "partial_funded" &&
-                                  "bg-amber-50 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200",
-                                status === "not_funded" &&
-                                  "bg-red-50 text-red-800 dark:bg-red-950/50 dark:text-red-300",
-                              )}
-                            >
-                              {status.replaceAll("_", " ")}
-                            </span>
+                            <div className="flex flex-wrap items-center gap-2">
+                              {isEducationGoal(g.goal_name) && g.destination ? (
+                                <span
+                                  className={cn(
+                                    "inline-block rounded-xl px-2.5 py-0.5 text-[0.75rem] font-bold uppercase",
+                                    destinationBadgeClass(g.destination),
+                                  )}
+                                >
+                                  {g.destination}
+                                </span>
+                              ) : null}
+                              <span
+                                className={cn(
+                                  "inline-block rounded-xl px-2.5 py-0.5 text-[0.75rem] font-bold uppercase",
+                                  status === "funded" &&
+                                    "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200",
+                                  status === "partial_funded" &&
+                                    "bg-amber-50 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200",
+                                  status === "not_funded" &&
+                                    "bg-red-50 text-red-800 dark:bg-red-950/50 dark:text-red-300",
+                                )}
+                              >
+                                {status.replaceAll("_", " ")}
+                              </span>
+                            </div>
                           </div>
                           <div className="mb-2.5 text-[0.82rem] text-slate-500 dark:text-slate-400">
                             {g.start_year != null && g.end_year != null ? (

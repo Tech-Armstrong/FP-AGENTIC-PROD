@@ -89,7 +89,7 @@ Python version is **not pinned** in-repo; LangChain 1.x typically needs 3.10+.
 ┌──────────────────────────────┐                    ┌──────────────▼───────────────┐
 │ FastAPI :8001                │                    │ LangGraph agent :8000        │
 │ backend/airtable_main.py     │                    │ agent/main.py                │
-│  GET /clients, /clients/{id}│                    │  POST /copilotkit            │
+│  GET/PATCH /clients/{id}   │                    │  POST /copilotkit            │
 │  POST /financial-plan/run ───┼──► NOT connected   │  AG-UI SSE (EventEncoder)    │
 │       │                      │    to chat agent   │  create_agent() ReAct loop   │
 │       ▼                      │                    │  tool: searchInternet only   │
@@ -302,7 +302,7 @@ Airtable record
 
 | Concern | Current behavior |
 |---------|------------------|
-| Source of truth for inputs | Airtable (read-only in app) |
+| Source of truth for inputs | Airtable; **spouse fields** and **education destinations** (Domestic/International) editable in-app (PATCH → Airtable). Plan inputs (rates, education target amounts, annuity) remain request-scoped overrides only. |
 | Plan persistence | None server-side; refresh loses plan and cached `workflow_state` (PPT download requires re-running Make plan) |
 | Chat thread persistence | `MemorySaver` in agent process only; lost on agent restart |
 | Concurrency | No locking; two simultaneous Make plan runs for same client = two independent invokes, last UI write wins |
@@ -339,12 +339,14 @@ Airtable record
 | `app/globals.css` | Tailwind v4 + CopilotKit CSS vars |
 | `app/api/copilotkit/route.ts` | Chat runtime proxy or direct Azure |
 | `app/api/airtable/clients/route.ts` | `GET` → FastAPI `/clients` |
-| `app/api/airtable/clients/[id]/route.ts` | `GET` → FastAPI `/clients/{id}` |
+| `app/api/airtable/clients/[id]/route.ts` | `GET` / `PATCH` → FastAPI `/clients/{id}` |
 | `app/api/financial-plan/run/route.ts` | `POST { record_id }` → `/financial-plan/run` |
 | `app/api/rsu-market-data/route.ts` | `GET` → `/rsu-market-data` |
 | `app/api/rsu-refresh/route.ts` | RSU cache refresh proxy |
 | `app/api/rsu/market-data/route.ts` | Legacy RSU paths |
 | `components/ClientsDashboard.tsx` | Main dashboard, readables, `FinancialPlanPanel` |
+| `components/SpouseDetailsPanel.tsx` | Editable spouse tab; PATCH spouse fields to Airtable on blur |
+| `components/EducationPlanningSection.tsx` | Kids tab education tables; editable destination (PATCH) + target amount (Make plan) |
 | `components/FinancialPlanPanel.tsx` | Make plan UI + summary tables |
 | `components/AssistantMessage.tsx` | Markdown + tool `subComponent` |
 | `components/generative-ui/SearchResults.tsx` | Search tool status UI |
@@ -353,7 +355,8 @@ Airtable record
 | `components/ui/*` | shadcn-style primitives + charts |
 | `lib/prompt.ts` | Copilot instructions (plan vs input data) |
 | `lib/fastapi-proxy.ts` | Shared FastAPI `fetch` helper |
-| `lib/utils.ts` | `cn()` |
+| `lib/spouseAirtableFields.ts` | Spouse UI path ↔ Airtable column mapping for PATCH |
+| `lib/educationAirtableFields.ts` | Child slot + UG/PG ↔ `child_N_*_destination` mapping for PATCH |
 | `lib/user-info.ts` | **Dead** — not imported |
 | `data/dashboard-data.ts` | Demo data for unused `Dashboard.tsx` |
 | `next.config.ts` | `allowedDevOrigins`, standalone trace root |
@@ -439,6 +442,7 @@ Repo-root `.env` is loaded by `agent/main.py`, `backend/airtable_main.py`, and p
 | `POST` | `/api/copilotkit` | CopilotKit run payload | SSE (LangGraph) or adapter stream | `:8000` or Azure |
 | `GET` | `/api/airtable/clients` | — | `{ clients: [{ record_id, name }] }` | `GET :8001/clients` |
 | `GET` | `/api/airtable/clients/[id]` | — | `{ record_id, client_data: {...} }` | `GET :8001/clients/{id}` |
+| `PATCH` | `/api/airtable/clients/[id]` | `{ fields: { spouse_*?, child_{1..3}_graduation_destination?, child_{1..3}_post_graduation_destination? } }` (whitelist) | `{ record_id, client_data }` | `PATCH :8001/clients/{id}` |
 | `POST` | `/api/financial-plan/run` | `{ record_id, education_targets?, overrides?: { epf_rate?, ppf_rate?, nps_rate?, mf_expected_return?, rsu_growth_rate?, desired_monthly_annuity?, retirement_age? } }` | `{ ok, summary, workflow_state }` or `{ detail }` | `POST :8001/financial-plan/run` |
 | `POST` | `/api/financial-plan/ppt` | `{ workflow_state }` (from prior Make plan) | `.pptx` binary or `{ detail }` | `POST :8001/financial-plan/ppt` |
 | `GET` | `/api/rsu-market-data` | — | RSU payload JSON | `GET :8001/rsu-market-data` |
@@ -453,13 +457,14 @@ Repo-root `.env` is loaded by `agent/main.py`, `backend/airtable_main.py`, and p
 | `GET` | `/copilotkit/health` | — | `{ status, agent: { name } }` |
 | `GET` | `/health` | — | `{ status, agent }` |
 
-### Python financial API (`:8001`, `backend/airtable_main.py`)
+### Python financial API (`:8001`, `backend-airtable/main.py`)
 
 | Method | Path | Body | Response |
 |--------|------|------|----------|
 | `GET` | `/health` | — | `{ status: "ok" }` |
 | `GET` | `/clients` | — | `{ clients: [...] }` |
 | `GET` | `/clients/{record_id}` | — | `{ record_id, client_data }` |
+| `PATCH` | `/clients/{record_id}` | `{ fields: { ... } }` spouse + education destination whitelist | `{ record_id, client_data }` (re-fetched after Airtable PATCH) |
 | `POST` | `/financial-plan/run` | `{ record_id, education_targets?, overrides?: PlanOverrides }` (rates → investments; `rsu_growth_rate` → `investment_details.rsu_growth_rate`; `retirement_age` / `desired_monthly_annuity` → `client_data`) | `{ ok: true, summary: {...}, workflow_state: {...} }` or HTTP error |
 | `POST` | `/financial-plan/ppt` | `{ workflow_state }` | `.pptx` attachment or HTTP error |
 | `GET` | `/rsu-market-data` | — | parquet-derived JSON |
@@ -467,7 +472,7 @@ Repo-root `.env` is loaded by `agent/main.py`, `backend/airtable_main.py`, and p
 | `GET` | `/rsu/market-data` | query `ticker` | legacy |
 | `POST` | `/rsu/market-data/refresh` | query `force`, `ticker` | legacy |
 
-**`summary` shape** (from `summarize_plan_state`): `client_name`, `monthly_surplus`, `risk_appetite`, `liquidity_ratio`, `liquidity_flag`, `flexibility`, `spending_behavior`, `ending_liquid_pool`, `ending_monthly_surplus`, `sorted_goals_preview`, `goal_allocation_preview` (with `funded_from_preview`), `loans_exist`, `final_unused_monthly_surplus`, `retirement_goal_preview`, `wealth_at_retirement_preview`, `annuity_preview` (when `desired_monthly_annuity` > 0), `term_insurance_requirement`, `rsu_portfolio_preview`, …
+**`summary` shape** (from `summarize_plan_state`): `client_name`, `monthly_surplus`, `risk_appetite`, `liquidity_ratio`, `liquidity_flag`, `flexibility`, `spending_behavior`, `ending_liquid_pool`, `ending_monthly_surplus`, `sorted_goals_preview`, `goal_allocation_preview` (with `funded_from_preview`; education rows include `destination` for Domestic/International badge in plan UI), `loans_exist`, `final_unused_monthly_surplus`, `retirement_goal_preview`, `wealth_at_retirement_preview`, `annuity_preview` (when `desired_monthly_annuity` > 0), `term_insurance_requirement`, `rsu_portfolio_preview`, …
 
 ---
 

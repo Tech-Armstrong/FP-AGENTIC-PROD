@@ -11,6 +11,7 @@ import {
 export type EducationPlanRow = {
   name_of_kid: string;
   dob?: string;
+  airtable_slot?: number;
   graduation_stream?: string | null;
   graduation_destination?: string | null;
   course_duration_ug?: number | null;
@@ -36,6 +37,7 @@ export type EducationStageView = {
 export type EducationChildBlock = {
   name: string;
   age: number | null;
+  airtableSlot: number;
   ug: EducationStageView;
   pg: EducationStageView | null;
   hasPg: boolean;
@@ -188,6 +190,7 @@ export function buildEducationChildBlock(
   return {
     name: planRow.name_of_kid,
     age: childAgeFromDob(dob),
+    airtableSlot: planRow.airtable_slot ?? 1,
     ug,
     pg: pg
       ? previewRow

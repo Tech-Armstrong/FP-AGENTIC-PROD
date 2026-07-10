@@ -1,8 +1,8 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, within, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, within, fireEvent, waitFor } from "@testing-library/react";
 import { EducationPlanningSection } from "@/components/EducationPlanningSection";
 import type { EducationChildBlock } from "@/lib/educationPlanningView";
 
@@ -13,6 +13,7 @@ const UG_START = 2010 + 18;
 const withPgPrePlan: EducationChildBlock = {
   name: "Asha",
   age: 16,
+  airtableSlot: 2,
   hasPg: true,
   ug: {
     stream: "MBBS",
@@ -43,6 +44,7 @@ const withPgPrePlan: EducationChildBlock = {
 const naOnly: EducationChildBlock = {
   name: "Ravi",
   age: 14,
+  airtableSlot: 1,
   hasPg: false,
   ug: {
     stream: "B.Tech",
@@ -59,8 +61,14 @@ const naOnly: EducationChildBlock = {
   pg: null,
 };
 
+const baseProps = {
+  recordId: "rec1",
+  onEducationSaved: noop,
+};
+
 const EXPECTED_HEADERS = [
   "Stream",
+  "Destination",
   "Course Duration",
   "Start Year",
   "End Year",
@@ -75,15 +83,37 @@ function tableCellCounts(table: HTMLTableElement) {
 }
 
 describe("EducationPlanningSection", () => {
-  it("UG table has 5 columns and no removed columns", () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          record_id: "rec1",
+          client_data: { education_planning: [] },
+        }),
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("UG table has 6 columns including Destination", () => {
     render(
-      <EducationPlanningSection blocks={[withPgPrePlan]} targets={{}} onTargetChange={noop} />,
+      <EducationPlanningSection
+        {...baseProps}
+        blocks={[withPgPrePlan]}
+        targets={{}}
+        onTargetChange={noop}
+      />,
     );
     const ugSection = document.querySelector(".ug-section")!;
     const table = ugSection.querySelector("table") as HTMLTableElement;
     const { headers, cells } = tableCellCounts(table);
-    expect(headers).toBe(5);
-    expect(cells).toBe(5);
+    expect(headers).toBe(6);
+    expect(cells).toBe(6);
     for (const h of EXPECTED_HEADERS) {
       expect(within(table).getByRole("columnheader", { name: h })).toBeInTheDocument();
     }
@@ -97,13 +127,18 @@ describe("EducationPlanningSection", () => {
 
   it("child with PG: PG table shows start and end years", () => {
     render(
-      <EducationPlanningSection blocks={[withPgPrePlan]} targets={{}} onTargetChange={noop} />,
+      <EducationPlanningSection
+        {...baseProps}
+        blocks={[withPgPrePlan]}
+        targets={{}}
+        onTargetChange={noop}
+      />,
     );
     const pgSection = document.querySelector(".pg-section")!;
     const table = pgSection.querySelector("table") as HTMLTableElement;
     const { headers, cells } = tableCellCounts(table);
-    expect(headers).toBe(5);
-    expect(cells).toBe(5);
+    expect(headers).toBe(6);
+    expect(cells).toBe(6);
     expect(within(table).getByRole("columnheader", { name: "Target Amount" })).toBeInTheDocument();
     expect(within(table).getByText("3 yrs")).toBeInTheDocument();
     expect(within(table).getByText(String(UG_START + 5))).toBeInTheDocument();
@@ -112,7 +147,12 @@ describe("EducationPlanningSection", () => {
 
   it("NA child: PG table absent, note present", () => {
     render(
-      <EducationPlanningSection blocks={[naOnly]} targets={{}} onTargetChange={noop} />,
+      <EducationPlanningSection
+        {...baseProps}
+        blocks={[naOnly]}
+        targets={{}}
+        onTargetChange={noop}
+      />,
     );
     expect(document.querySelector(".pg-section")).toBeNull();
     expect(
@@ -124,6 +164,7 @@ describe("EducationPlanningSection", () => {
     const onTargetChange = vi.fn();
     render(
       <EducationPlanningSection
+        {...baseProps}
         blocks={[withPgPrePlan]}
         targets={{ Asha: { ug: "5000000", pg: "8000000" } }}
         onTargetChange={onTargetChange}
@@ -139,22 +180,90 @@ describe("EducationPlanningSection", () => {
     expect(onTargetChange).toHaveBeenCalledWith("Asha", "ug", "6000000");
   });
 
+  it("changing destination PATCHes the correct Airtable field", async () => {
+    const onEducationSaved = vi.fn();
+    render(
+      <EducationPlanningSection
+        recordId="rec1"
+        onEducationSaved={onEducationSaved}
+        blocks={[withPgPrePlan]}
+        targets={{}}
+        onTargetChange={noop}
+      />,
+    );
+
+    const ugTable = document.querySelector(".ug-section table") as HTMLTableElement;
+    const select = within(ugTable).getByRole("combobox") as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "International" } });
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/airtable/clients/rec1",
+        expect.objectContaining({
+          method: "PATCH",
+          body: JSON.stringify({
+            fields: { child_2_graduation_destination: "International" },
+          }),
+        }),
+      );
+    });
+    expect(onEducationSaved).toHaveBeenCalled();
+  });
+
+  it("shows error when destination PATCH fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 502,
+        json: async () => ({ error: "Airtable unavailable" }),
+      }),
+    );
+
+    render(
+      <EducationPlanningSection
+        recordId="rec1"
+        onEducationSaved={noop}
+        blocks={[withPgPrePlan]}
+        targets={{}}
+        onTargetChange={noop}
+      />,
+    );
+
+    const ugTable = document.querySelector(".ug-section table") as HTMLTableElement;
+    const select = within(ugTable).getByRole("combobox") as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "International" } });
+
+    expect(await screen.findByText("Airtable unavailable")).toBeInTheDocument();
+  });
+
   it("NA child: no PG target input", () => {
     render(
-      <EducationPlanningSection blocks={[naOnly]} targets={{}} onTargetChange={noop} />,
+      <EducationPlanningSection
+        {...baseProps}
+        blocks={[naOnly]}
+        targets={{}}
+        onTargetChange={noop}
+      />,
     );
     expect(document.querySelectorAll('input[placeholder="Enter amount"]')).toHaveLength(1);
   });
 
   it("MBBS shows 5 yrs in UG table; Other shows Airtable duration", () => {
     render(
-      <EducationPlanningSection blocks={[withPgPrePlan]} targets={{}} onTargetChange={noop} />,
+      <EducationPlanningSection
+        {...baseProps}
+        blocks={[withPgPrePlan]}
+        targets={{}}
+        onTargetChange={noop}
+      />,
     );
     expect(screen.getByText("5 yrs")).toBeInTheDocument();
 
     const otherChild: EducationChildBlock = {
       name: "Sam",
       age: 10,
+      airtableSlot: 3,
       hasPg: false,
       ug: {
         stream: "Other",
@@ -171,7 +280,12 @@ describe("EducationPlanningSection", () => {
       pg: null,
     };
     render(
-      <EducationPlanningSection blocks={[otherChild]} targets={{}} onTargetChange={noop} />,
+      <EducationPlanningSection
+        {...baseProps}
+        blocks={[otherChild]}
+        targets={{}}
+        onTargetChange={noop}
+      />,
     );
     expect(screen.getByText("6 yrs")).toBeInTheDocument();
   });
@@ -179,6 +293,7 @@ describe("EducationPlanningSection", () => {
   it("renders separate blocks for multiple children", () => {
     render(
       <EducationPlanningSection
+        {...baseProps}
         blocks={[withPgPrePlan, naOnly]}
         targets={{}}
         onTargetChange={noop}

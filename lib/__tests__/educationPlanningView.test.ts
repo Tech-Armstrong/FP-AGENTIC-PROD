@@ -15,12 +15,14 @@ describe("buildEducationPlanningBlocks", () => {
         dob: CHILD_DOB,
         graduation_stream: "MBBS",
         graduation_destination: "Domestic",
+        airtable_slot: 2,
         post_graduation_stream: "MD",
         post_graduation_destination: "Domestic",
       },
     ];
     const blocks = buildEducationPlanningBlocks(plans, kids);
     expect(blocks).toHaveLength(1);
+    expect(blocks[0].airtableSlot).toBe(2);
     expect(blocks[0].ug.duration).toBe(5);
     expect(blocks[0].ug.startYear).toBe(UG_START);
     expect(blocks[0].ug.endYear).toBe(UG_START + 5);
