@@ -479,8 +479,8 @@ def summarize_plan_state(state: dict) -> dict:
                 out.append(
                     {
                         "type": "SSY",
+                        "source": f.get("source"),
                         "amount": f.get("amount_used"),
-                        "fv": f.get("fv_contribution"),
                     }
                 )
             elif ft == "esop_funds":

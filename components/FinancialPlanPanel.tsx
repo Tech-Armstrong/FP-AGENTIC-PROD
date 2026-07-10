@@ -397,12 +397,40 @@ function getRsuYearsUtilizedLabel(
   return null;
 }
 
-function FundingTable({ rows }: { rows: FundedFromRow[] }) {
-  if (!rows.length) {
-    return (
-      <span className="text-[0.8rem] text-slate-400 dark:text-slate-500">No allocation recorded</span>
-    );
-  }
+function SsyFundingCard({ row }: { row: FundedFromRow }) {
+  const amount = row.amount as number | undefined;
+  const source = row.source as string | undefined;
+  const childHint = source?.replace(/^SSY account of\s+/i, "").trim();
+
+  return (
+    <div className="w-fit rounded-lg border border-violet-200 bg-white px-3.5 py-2.5 dark:border-violet-800 dark:bg-gray-900">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        {childHint ? (
+          <span className="text-[0.8rem] font-semibold text-slate-800 dark:text-slate-200">
+            {childHint}
+          </span>
+        ) : null}
+        <span
+          className={cn(
+            "inline-block rounded-lg px-2 py-0.5 text-[0.72rem] font-bold",
+            fundingBadgeClass("SSY"),
+          )}
+        >
+          SSY
+        </span>
+      </div>
+      <div className="mt-2 text-[0.8rem]">
+        <div className="mb-0.5 text-[0.68rem] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+          Amount utilized
+        </div>
+        <div className="font-semibold text-slate-800 dark:text-slate-200">{fmtInr(amount)}</div>
+      </div>
+    </div>
+  );
+}
+
+function FundingTableOnly({ rows }: { rows: FundedFromRow[] }) {
+  if (!rows.length) return null;
 
   return (
     <div className="overflow-x-auto">
@@ -511,6 +539,26 @@ function FundingTable({ rows }: { rows: FundedFromRow[] }) {
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function FundingTable({ rows }: { rows: FundedFromRow[] }) {
+  if (!rows.length) {
+    return (
+      <span className="text-[0.8rem] text-slate-400 dark:text-slate-500">No allocation recorded</span>
+    );
+  }
+
+  const ssyRows = rows.filter((r) => String(r.type || "") === "SSY");
+  const tableRows = rows.filter((r) => String(r.type || "") !== "SSY");
+
+  return (
+    <div className="space-y-3">
+      {tableRows.length > 0 ? <FundingTableOnly rows={tableRows} /> : null}
+      {ssyRows.map((row, i) => (
+        <SsyFundingCard key={i} row={row} />
+      ))}
     </div>
   );
 }
