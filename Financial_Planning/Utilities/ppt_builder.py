@@ -630,7 +630,7 @@ class PPTBuilder:
         # Find retirement goal
         retirement_plan = {}
         for x in self.final_state['optimal_goal_allocation']['goals']:
-            if x['goal_name'] == "Retirement":
+            if str(x.get('goal_name', '')).strip().lower() == 'retirement':
                 retirement_plan = x
                 break
 
@@ -1002,7 +1002,7 @@ class PPTBuilder:
 
         marriage_goals = []
         for goal in self.final_state.get('optimal_goal_allocation', {}).get('goals', []):
-            if str(goal.get('goal_name', '')).strip().endswith('Marriage'):
+            if str(goal.get('goal_name', '')).strip().lower().endswith('marriage'):
                 child_name = goal['goal_name'].rsplit(' ', 1)[0]
                 marriage_goals.append({
                     'goal_name':    goal['goal_name'],
@@ -1107,12 +1107,16 @@ class PPTBuilder:
         for goal in self.final_state.get('optimal_goal_allocation', {}).get('goals', []):
             name = str(goal.get('goal_name', '')).strip()
             parts = name.split()
-            # Exclude Retirement, education (UG/PG), and Marriage goals
-            if name == 'Retirement':
+            # Exclude Retirement, education (UG/PG), and Marriage goals.
+            # Matched case-insensitively: goal_name casing is not guaranteed —
+            # the goal is created lowercase ("retirement") and only title-cased
+            # incidentally by the LLM prioritisation step, so an exact match here
+            # silently misfiles retirement as a misc goal.
+            if name.lower() == 'retirement':
                 continue
-            if parts and parts[-1] in ('UG', 'PG'):
+            if parts and parts[-1].upper() in ('UG', 'PG'):
                 continue
-            if parts and parts[-1] == 'Marriage':
+            if parts and parts[-1].lower() == 'marriage':
                 continue
             misc_goals.append({
                 'goal_name':    name,
