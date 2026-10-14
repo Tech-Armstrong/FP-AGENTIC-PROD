@@ -36,7 +36,8 @@ from Financial_Planning.Utilities.ppt_utilities import (
     find_and_update_table,
     indx_text_boxes,replace_pie_chart_with_matplotlib,
     create_goals_roadmap,
-    delete_text_box,add_table_to_slide
+    delete_text_box,add_table_to_slide,
+    replace_chart_with_horizontal_bars
 )
 from Financial_Planning.Utilities.utility_functions import convert_currency, analyze_asset_portfolio
 
@@ -1640,6 +1641,272 @@ class PPTBuilder:
                     if not para.runs and ('total corpus' in para.text.lower() or 'crores' in para.text.lower()):
                         para.text = f"{corpus_in_crores} Crores"
                 break
+
+        return True
+
+    @staticmethod
+    def _annuity_source_label(source: dict, *, include_rate: bool = False) -> str:
+        """Format a source row label to match the dashboard annuity table."""
+        label = str(source.get("label") or source.get("key") or "—").strip()
+        rate = source.get("rate")
+        if include_rate and rate and str(rate).strip() not in ("", "-"):
+            label = f"{label} @ {rate}"
+
+        remaining = source.get("remaining_base")
+        corpus_fv = source.get("corpus_fv")
+        key = str(source.get("key") or "").lower()
+        if remaining is not None and float(remaining) > 0:
+            kind = "ESOP" if key == "esop" else "RSU" if key == "rsu" else "balance"
+            label = f"{label}\nfrom remaining {kind} {convert_currency(float(remaining))}"
+        elif corpus_fv is not None and float(corpus_fv) > 0:
+            label = f"{label}\nfrom {convert_currency(float(corpus_fv))} corpus"
+
+        if source.get("required") is False:
+            label = f"{label}\n(not required)"
+        return label
+
+    @staticmethod
+    def _annuity_growth_rate(source: dict) -> str:
+        rate = source.get("rate")
+        if rate is None:
+            return "-"
+        rate_str = str(rate).strip()
+        return rate_str if rate_str and rate_str != "-" else "-"
+
+    def build_retirement_annuity_slide(self, slide):
+        """
+        Build the Retirement Annuity slide from final_state['retirement_annuity'].
+
+        Mirrors the dashboard section: Desired / Achievable / status, income-source
+        donut, Source → Monthly income table, and income-preservation footer note.
+
+        Expects a Wealth Created–style stencil (title + optional pie placeholder +
+        room for a left table). Returns True when built, False when skipped.
+        """
+        annuity = self.final_state.get("retirement_annuity") or {}
+        sources = annuity.get("sources") if isinstance(annuity, dict) else None
+        if not isinstance(annuity, dict) or not sources:
+            print("Retirement Annuity: skipped (no retirement_annuity.sources)")
+            return False
+
+        print(f"Retirement Annuity: slide: {slide}")
+
+        retirement_year = annuity.get("retirement_year")
+        if retirement_year in (None, ""):
+            ret_info = self.final_state.get("required_retirement_corpus", {})
+            years_to_ret = (ret_info.get("client_info") or {}).get("years_to_retirement", 0) or 0
+            retirement_year = date.today().year + int(years_to_ret)
+
+        desired = float(annuity.get("desired_monthly_annuity") or 0)
+        achievable_monthly = float(annuity.get("achievable_monthly_annuity") or 0)
+        total_used = float(annuity.get("total_available_monthly") or 0)
+
+        used_sources = [
+            s for s in sources
+            if isinstance(s, dict) and float(s.get("monthly_income") or 0) > 0
+        ]
+        if not used_sources:
+            used_sources = [s for s in sources if isinstance(s, dict)]
+
+        TEAL = RGBColor(0, 172, 193)
+        WHITE = RGBColor(255, 255, 255)
+        BLACK = RGBColor(0, 0, 0)
+        MUTED = RGBColor(0x64, 0x74, 0x8B)
+
+        table_data = [["Source", "Growth Rate", "Monthly Income"]]
+        for src in used_sources:
+            monthly = float(src.get("monthly_income") or 0)
+            table_data.append([
+                self._annuity_source_label(src),
+                self._annuity_growth_rate(src),
+                convert_currency(monthly),
+            ])
+        funded_total = total_used if total_used else sum(
+            float(s.get("monthly_income") or 0) for s in used_sources
+        )
+        table_data.append([
+            "Total used",
+            "",
+            convert_currency(funded_total),
+        ])
+
+        slide_obj = self.prs.slides[slide]
+
+        # Keep the stencil chart's geometry so the donut lands exactly where the
+        # Wealth Created chart does — otherwise the helper falls back to hardcoded
+        # coordinates and the chart renders at a different size/position.
+        chart_rect = None
+        for shape in list(slide_obj.shapes):
+            if shape.has_table:
+                shape._element.getparent().remove(shape._element)
+                continue
+            # Duplicated Wealth stencil may keep a chart with a broken part link —
+            # remove it so the replacement chart can be placed as a new image.
+            name = (getattr(shape, "name", "") or "").lower()
+            try:
+                is_chart = bool(shape.has_chart)
+            except KeyError:
+                is_chart = "chart" in name
+            if is_chart or "chart" in name:
+                if chart_rect is None:
+                    chart_rect = (shape.left, shape.top, shape.width, shape.height)
+                shape._element.getparent().remove(shape._element)
+
+        add_table_to_slide(
+            slide=slide_obj,
+            data=table_data,
+            left=Inches(1.0),
+            top=Inches(2.4),
+            width=Inches(9.0),
+            height=Inches(0.55 * len(table_data)),
+            font_size=Pt(24),
+            header_fill=TEAL,
+            header_font_color=WHITE,
+            font_color=BLACK,
+            body_fill=WHITE,
+        )
+
+        # Horizontal bars rather than a donut: income sources here are dominated by
+        # two large entries, and the remaining few-percent slices collide when their
+        # labels are placed by wedge angle.
+        bar_data = {}
+        for src in used_sources:
+            monthly = float(src.get("monthly_income") or 0)
+            if monthly <= 0:
+                continue
+            label = str(src.get("label") or src.get("key") or "Other").strip()
+            bar_data[label] = bar_data.get(label, 0) + monthly
+
+        if bar_data:
+            replace_chart_with_horizontal_bars(
+                presentation=self.prs,
+                slide_number=slide,
+                bar_data=bar_data,
+                title=f"Retirement Annuity - {retirement_year}",
+                chart_rect=chart_rect,
+                value_formatter=convert_currency,
+            )
+
+        # Retirement-year monthly annuity → today's rupees at 6% inflation
+        # (same rate used in required-retirement-corpus maths).
+        INFLATION_RATE = 0.06
+        ret_info = self.final_state.get("required_retirement_corpus", {})
+        years_to_ret = int((ret_info.get("client_info") or {}).get("years_to_retirement", 0) or 0)
+        if years_to_ret <= 0 and retirement_year:
+            try:
+                years_to_ret = max(0, int(retirement_year) - date.today().year)
+            except (TypeError, ValueError):
+                years_to_ret = 0
+
+        # Prefer the funded/achievable monthly figure; fall back to desired.
+        monthly_at_retirement = funded_total or achievable_monthly or desired
+        if years_to_ret > 0 and monthly_at_retirement > 0:
+            monthly_today = monthly_at_retirement / ((1 + INFLATION_RATE) ** years_to_ret)
+        else:
+            monthly_today = monthly_at_retirement
+
+        today_sentence = (
+            f"This Rs. {convert_currency(monthly_at_retirement)} is equivalent to "
+            f"{convert_currency(monthly_today)}/mo in today's terms "
+            f"(assuming {INFLATION_RATE * 100:.0f}% inflation)."
+        )
+        footer_note = (
+            "Funded by income/yield only — ESOP, RSU, FD and funds keep their principal; "
+            "the RSU tracker's remaining balance is unchanged."
+        )
+
+        title_updated = False
+        bottom_updated = False
+        for shape in list(slide_obj.shapes):
+            if not shape.has_text_frame:
+                continue
+
+            txt = shape.text_frame.text.strip().lower()
+            if not title_updated and (
+                "wealth created" in txt or "ret year" in txt or "annuity" in txt
+            ):
+                tf = shape.text_frame
+                p0 = tf.paragraphs[0]
+                if p0.runs:
+                    p0.runs[0].text = f"Retirement Annuity ({retirement_year})"
+                    p0.runs[0].font.bold = True
+                    for extra in p0.runs[1:]:
+                        extra.text = ""
+                else:
+                    run = p0.add_run()
+                    run.text = f"Retirement Annuity ({retirement_year})"
+                    run.font.bold = True
+                for para in tf.paragraphs[1:]:
+                    for run in para.runs:
+                        run.text = ""
+                title_updated = True
+                continue
+
+            # Reuse Wealth Created ">> … Crores" bottom slot (right of the chevron)
+            if not bottom_updated and ("total corpus" in txt or "crores" in txt):
+                shape.left = Inches(1.7)
+                shape.top = Inches(9.85)
+                shape.width = Inches(16.8)
+                shape.height = Inches(1.1)
+                tf = shape.text_frame
+                tf.word_wrap = True
+                p0 = tf.paragraphs[0]
+                if p0.runs:
+                    p0.runs[0].text = today_sentence
+                    p0.runs[0].font.name = "Calibri"
+                    p0.runs[0].font.size = Pt(28)
+                    p0.runs[0].font.bold = True
+                    p0.runs[0].font.color.rgb = RGBColor(0x00, 0x00, 0x00)
+                    for extra in p0.runs[1:]:
+                        extra.text = ""
+                else:
+                    run = p0.add_run()
+                    run.text = today_sentence
+                    run.font.name = "Calibri"
+                    run.font.size = Pt(28)
+                    run.font.bold = True
+                    run.font.color.rgb = RGBColor(0x00, 0x00, 0x00)
+                for para in tf.paragraphs[1:]:
+                    for run in para.runs:
+                        run.text = ""
+                bottom_updated = True
+
+        if not title_updated:
+            title_box = slide_obj.shapes.add_textbox(
+                Inches(1.0), Inches(0.55), Inches(14.0), Inches(0.7)
+            )
+            p = title_box.text_frame.paragraphs[0]
+            run = p.add_run()
+            run.text = f"Retirement Annuity ({retirement_year})"
+            run.font.size = Pt(32)
+            run.font.bold = True
+            run.font.color.rgb = RGBColor(0x1F, 0x38, 0x64)
+
+        if not bottom_updated:
+            bottom_box = slide_obj.shapes.add_textbox(
+                Inches(1.7), Inches(9.85), Inches(16.8), Inches(1.1)
+            )
+            btf = bottom_box.text_frame
+            btf.word_wrap = True
+            p = btf.paragraphs[0]
+            run = p.add_run()
+            run.text = today_sentence
+            run.font.name = "Calibri"
+            run.font.size = Pt(28)
+            run.font.bold = True
+            run.font.color.rgb = RGBColor(0x00, 0x00, 0x00)
+
+        note_box = slide_obj.shapes.add_textbox(
+            Inches(1.0), Inches(9.05), Inches(17.5), Inches(0.55)
+        )
+        ntf = note_box.text_frame
+        ntf.word_wrap = True
+        np = ntf.paragraphs[0]
+        nrun = np.add_run()
+        nrun.text = footer_note
+        nrun.font.size = Pt(14)
+        nrun.font.color.rgb = MUTED
+        nrun.font.italic = True
 
         return True
 

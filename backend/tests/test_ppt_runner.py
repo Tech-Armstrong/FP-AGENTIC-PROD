@@ -95,7 +95,123 @@ def test_generate_financial_plan_ppt_missing_azure_env():
             )
 
 
-def test_build_term_cover_slide_adds_table():
+def test_build_retirement_annuity_slide_adds_table_and_title():
+    template = default_template_path()
+    if not Path(template).is_file():
+        pytest.skip("PPT template not present on this machine")
+
+    from pptx import Presentation
+    from Financial_Planning.Utilities.ppt_builder import PPTBuilder
+    from Financial_Planning.Utilities.ppt_utilities import duplicate_slide, move_slide
+
+    prs = Presentation(template)
+    wealth_idx = 20
+    duplicate_slide(prs, wealth_idx)
+    move_slide(prs, len(prs.slides) - 1, wealth_idx + 1)
+
+    state = {
+        "required_retirement_corpus": {
+            "client_info": {"years_to_retirement": 19},
+        },
+        "retirement_annuity": {
+            "model": "income_preservation",
+            "retirement_year": 2045,
+            "desired_monthly_annuity": 150_000,
+            "achievable": True,
+            "achievable_monthly_annuity": 150_000,
+            "shortfall_monthly": 0,
+            "total_available_monthly": 150_000,
+            "sources": [
+                {
+                    "key": "epf_ppf",
+                    "label": "EPF / PPF yield",
+                    "rate": "8.5%",
+                    "monthly_income": 69_125,
+                    "corpus_fv": 9_758_793,
+                    "required": True,
+                },
+                {
+                    "key": "mutual_funds",
+                    "label": "Mutual fund yield",
+                    "rate": "10.0%",
+                    "monthly_income": 70_623,
+                    "corpus_fv": 19_751_402,
+                    "required": True,
+                },
+                {
+                    "key": "fixed_deposits",
+                    "label": "FD interest",
+                    "rate": "6.5%",
+                    "monthly_income": 3_584,
+                    "corpus_fv": 661_717,
+                    "required": True,
+                },
+            ],
+        }
+    }
+    builder = PPTBuilder(prs, state)
+    annuity_idx = wealth_idx + 1
+    assert builder.build_retirement_annuity_slide(annuity_idx) is True
+
+    slide = prs.slides[annuity_idx]
+    titles = [
+        sh.text_frame.text
+        for sh in slide.shapes
+        if sh.has_text_frame and "annuity" in sh.text_frame.text.lower()
+    ]
+    assert titles, "expected Retirement Annuity title on slide"
+    assert "2045" in titles[0]
+
+    today_sentences = [
+        sh.text_frame.text
+        for sh in slide.shapes
+        if sh.has_text_frame and "today's terms" in sh.text_frame.text.lower()
+    ]
+    assert len(today_sentences) == 1, f"expected one today's-terms sentence, got: {today_sentences}"
+    assert today_sentences[0].startswith("This Rs.")
+    assert "6% inflation" in today_sentences[0]
+    assert "1,50,000" in today_sentences[0] or "150,000" in today_sentences[0]
+
+    tables = [s for s in slide.shapes if s.has_table]
+    assert tables
+    header = [tables[0].table.cell(0, c).text for c in range(3)]
+    assert header[0].lower().startswith("source")
+    assert "growth" in header[1].lower()
+    assert "monthly" in header[2].lower()
+    # header + 3 sources + total used
+    assert tables[0].table.rows.__len__() == 5
+    assert "Total used" in tables[0].table.cell(4, 0).text
+    assert "8.5%" in tables[0].table.cell(1, 1).text
+
+
+def test_build_retirement_annuity_slide_skips_without_sources():
+    from pptx import Presentation
+    from Financial_Planning.Utilities.ppt_builder import PPTBuilder
+
+    prs = Presentation()
+    prs.slides.add_slide(prs.slide_layouts[6])
+    builder = PPTBuilder(prs, {"retirement_annuity": {"desired_monthly_annuity": 0}})
+    assert builder.build_retirement_annuity_slide(0) is False
+
+
+def test_annuity_source_label_includes_rate_and_corpus():
+    from Financial_Planning.Utilities.ppt_builder import PPTBuilder
+
+    label = PPTBuilder._annuity_source_label(
+        {
+            "key": "epf_ppf",
+            "label": "EPF / PPF yield",
+            "rate": "8.5%",
+            "corpus_fv": 1_000_000,
+            "required": True,
+        },
+        include_rate=True,
+    )
+    assert "EPF / PPF yield @ 8.5%" in label
+    assert "corpus" in label.lower()
+    assert PPTBuilder._annuity_growth_rate({"rate": "8.5%"}) == "8.5%"
+    assert PPTBuilder._annuity_growth_rate({"rate": "-"}) == "-"
+
     template = default_template_path()
     if not Path(template).is_file():
         pytest.skip("PPT template not present on this machine")

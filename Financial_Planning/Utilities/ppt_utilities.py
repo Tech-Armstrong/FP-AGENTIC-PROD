@@ -2724,7 +2724,7 @@ import matplotlib.font_manager as fm
 import io
 from PIL import Image
 
-def replace_pie_chart_with_matplotlib(presentation, slide_number, pie_data, title):
+def replace_pie_chart_with_matplotlib(presentation, slide_number, pie_data, title, chart_rect=None):
     """
     Identifies a pie chart in a slide, captures its position, creates a matplotlib pie chart,
     and replaces the original chart with the matplotlib image.
@@ -2740,6 +2740,10 @@ def replace_pie_chart_with_matplotlib(presentation, slide_number, pie_data, titl
         Example: {'Real Estate Investment': 0.69, 'Direct Equity': 0.06, 'PMS/AIF': 0.05, 'PPF': 0.05, 'others': 0.15}
     title : str
         The title text for the chart
+    chart_rect : tuple, optional
+        (left, top, width, height) in EMU to place the rendered chart. Use when the
+        caller removed the stencil's chart placeholder but wants to keep its geometry,
+        so the donut matches the position/size it had in the template.
     
     Returns:
     --------
@@ -2774,7 +2778,13 @@ def replace_pie_chart_with_matplotlib(presentation, slide_number, pie_data, titl
 
     pie_chart_shape = pie_chart_shape or any_chart_shape
 
-    if pie_chart_shape is None:
+    if chart_rect is not None:
+        # Caller supplied the stencil's original geometry (placeholder already removed)
+        left, top, width, height = chart_rect
+        if pie_chart_shape is not None:
+            sp = pie_chart_shape._element
+            sp.getparent().remove(sp)
+    elif pie_chart_shape is None:
         # Template may lack a chart placeholder (or slide index drifted) — place chart on the right
         left = Inches(11.0)
         top = Inches(2.4)
@@ -3524,3 +3534,137 @@ def add_table_to_slide(slide,data,left=Inches(1),top=Inches(1),
                 cell.fill.fore_color.rgb = body_fill
 
             return shape
+
+
+def replace_chart_with_horizontal_bars(presentation, slide_number, bar_data, title,
+                                       chart_rect=None, value_formatter=None):
+    """
+    Render a horizontal bar chart image in place of a slide's chart placeholder.
+
+    Preferred over the donut when the series contains very small slices: donut labels
+    are positioned by wedge angle, so values of a few percent collide no matter how
+    the chart is sized. Bars lay categories out on a vertical axis with fixed row
+    spacing, so labels can never overlap.
+
+    Parameters:
+    -----------
+    presentation : pptx.Presentation
+        The presentation object
+    slide_number : int
+        The slide number (0-indexed)
+    bar_data : dict
+        Ordered mapping of category name -> absolute value (not a ratio).
+        Percentages are derived from the values.
+    title : str
+        Chart title (currently unused in the rendered image; kept for call-site parity)
+    chart_rect : tuple, optional
+        (left, top, width, height) in EMU. Use when the caller already removed the
+        stencil's chart placeholder but wants to keep its geometry.
+    value_formatter : callable, optional
+        Formats a value for its bar label. Defaults to a plain comma-grouped integer.
+
+    Returns:
+    --------
+    pptx.Presentation
+        Updated presentation object
+    """
+    slide = presentation.slides[slide_number]
+
+    # Locate (and remove) an existing chart placeholder, mirroring the donut helper
+    pie_chart_shape = None
+    for shape in slide.shapes:
+        try:
+            if shape.has_chart:
+                pie_chart_shape = shape
+                break
+        except KeyError:
+            continue
+
+    if chart_rect is not None:
+        left, top, width, height = chart_rect
+        if pie_chart_shape is not None:
+            sp = pie_chart_shape._element
+            sp.getparent().remove(sp)
+    elif pie_chart_shape is None:
+        left = Inches(11.0)
+        top = Inches(2.4)
+        width = Inches(7.5)
+        height = Inches(5.5)
+    else:
+        left = pie_chart_shape.left
+        top = pie_chart_shape.top
+        width = pie_chart_shape.width
+        height = pie_chart_shape.height
+        sp = pie_chart_shape._element
+        sp.getparent().remove(sp)
+
+    if value_formatter is None:
+        value_formatter = lambda v: f"{round(v):,}"
+
+    filtered = {k: float(v) for k, v in bar_data.items() if float(v) > 0}
+    if not filtered:
+        return presentation
+
+    # Largest contributor at the top reads most naturally
+    ordered = sorted(filtered.items(), key=lambda kv: kv[1], reverse=True)
+    labels = [k for k, _ in ordered]
+    values = [v for _, v in ordered]
+    total = sum(values)
+
+    # Deck palette: deep blue for the biggest sources fading to cyan for the smallest
+    bar_colors = ['#0077B6', '#0088A8', '#00ADB5', '#00D9E1', '#00FFFF',
+                  '#023E8A', '#005A8D', '#03045E', '#1E1548', '#0080FF']
+
+    n = len(values)
+    # Fixed canvas (matching the donut helper); row spacing scales via bar height
+    # instead of figure height, so a long series cannot balloon the raster size.
+    fig, ax = plt.subplots(figsize=(16, 12), facecolor='none')
+    ax.set_facecolor('none')
+
+    y_pos = np.arange(n)[::-1]  # first item at top
+    ax.barh(y_pos, values, height=0.62 if n > 2 else 0.4,
+            color=bar_colors[:n], edgecolor='white', linewidth=2, zorder=3)
+
+    label_fs = 30 if n <= 6 else 24
+    value_fs = 28 if n <= 6 else 22
+
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels(labels, fontsize=label_fs, fontweight='bold', color='#2C3E50')
+    for lbl in ax.get_yticklabels():
+        lbl.set_fontfamily('Calibri')
+
+    # Value + share annotated at the end of each bar
+    for y, val in zip(y_pos, values):
+        pct = (val / total) if total else 0
+        ax.text(val + max(values) * 0.02, y,
+                f"{value_formatter(val)}  ({pct:.1%})",
+                va='center', ha='left',
+                fontsize=value_fs, fontweight='bold', color='#2C3E50',
+                fontfamily='Calibri', zorder=4)
+
+    # Headroom so the longest annotation stays inside the canvas
+    ax.set_xlim(0, max(values) * 1.42)
+    ax.set_xticks([])
+    for side in ('top', 'right', 'bottom', 'left'):
+        ax.spines[side].set_visible(False)
+    ax.tick_params(axis='y', length=0)
+    ax.grid(False)
+
+    buf = io.BytesIO()
+    plt.tight_layout()
+    plt.savefig(buf, format='png', dpi=150, bbox_inches='tight',
+                facecolor='none', edgecolor='none', transparent=True)
+    buf.seek(0)
+    plt.close()
+
+    img = Image.open(buf)
+    img_buf = io.BytesIO()
+    img.save(img_buf, format='PNG')
+    img_buf.seek(0)
+
+    slide.shapes.add_picture(img_buf, left, top, width, height)
+
+    buf.close()
+    img_buf.close()
+
+    return presentation

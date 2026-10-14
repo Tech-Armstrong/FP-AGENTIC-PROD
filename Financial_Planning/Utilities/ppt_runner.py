@@ -1,7 +1,7 @@
 """
 PowerPoint generation from LangGraph financial-plan workflow state.
 
-Used by the dashboard API (POST /financial-plan/ppt) and the standalone CLI in Main/main.py.
+Used by the dashboard API (POST /financial-plan/ppt).
 """
 
 from __future__ import annotations
@@ -20,8 +20,10 @@ from Financial_Planning.Models.llm_schemas import retirement_commentary
 from Financial_Planning.Utilities.ppt_builder import PPTBuilder
 from Financial_Planning.Utilities.ppt_utilities import (
     delete_slide,
+    duplicate_slide,
     find_slide_index_by_text,
     indx_text_boxes,
+    move_slide,
     update_text_of_textbox,
 )
 from Financial_Planning.Utilities.utility_functions import convert_currency
@@ -142,27 +144,31 @@ def populate_presentation(prs: Presentation, final_state: dict, llm_azure: Azure
     builder.build_goals_roadmap_slide(slide=5)
     slide = 6
     builder.build_financial_health_checkup_slide(slide=6)
+
+    has_liabilities = builder.build_liabilities_slide(slide=7)
+    if not has_liabilities:
+        delete_list.append(7)
+
     slide = 9
     builder.build_retirement_outlook_slide(retirement_commentary_llm, slide=9)
     slide = 10
     builder.build_retirement_goal_planning_slide(llm_azure, slide=10)
 
-    has_ulips = builder.build_ulips_slide(slide=16)
-    if not has_ulips:
-        delete_list.append(16)
+    has_epf = builder.build_epf_slide(slide=11)
+    if not has_epf:
+        delete_list.append(11)
 
-    has_ssy = builder.build_ssy_scheme_slide(slide=17)
-    if not has_ssy:
-        delete_list.append(17)
+    has_ppf = builder.build_ppf_slide(slide=13)
+    if not has_ppf:
+        delete_list.append(13)
 
-    has_marriage, _marriage_slide_offset = builder.build_marriage_slide(slide=18)
-    if not has_marriage:
-        delete_list.append(18)
-
-    has_misc, _misc_slide_offset = builder.build_misc_goals_slides(template_slide=19)
-    if not has_misc:
-        delete_list.append(19)
-
+    # Education is built FIRST among the index>=16 stencils. For every child
+    # after the first it inserts a duplicated summary+details pair at physical
+    # index 16/17, which pushes ulips/ssy/marriage/misc downward. Building it
+    # here means builder.slide_offset already reflects those inserts, so the
+    # stencils below can be located at their true (shifted) positions instead
+    # of stale literals. Education's own template slides (14/15) sit BEFORE any
+    # insert point, so they never shift and stay literal.
     has_kids, _edu_slide_offset = builder.prepare_and_build_education_slides(
         summary_slide=14, details_slide=15
     )
@@ -170,16 +176,66 @@ def populate_presentation(prs: Presentation, final_state: dict, llm_azure: Azure
         delete_list.append(14)
         delete_list.append(15)
 
-    has_liabilities = builder.build_liabilities_slide(slide=7)
-    if not has_liabilities:
-        delete_list.append(7)
+    # From here on, every fixed stencil (>=16) must be offset-adjusted by the
+    # slides education inserted ahead of it — both the build target AND the
+    # delete_list entry — or deletion removes the wrong slide and empty
+    # stencils (e.g. the marriage slide) leak into the output.
+    ulips_slide = 16 + builder.slide_offset
+    has_ulips = builder.build_ulips_slide(slide=ulips_slide)
+    if not has_ulips:
+        delete_list.append(ulips_slide)
+
+    ssy_slide = 17 + builder.slide_offset
+    has_ssy = builder.build_ssy_scheme_slide(slide=ssy_slide)
+    if not has_ssy:
+        delete_list.append(ssy_slide)
+
+    marriage_slide = 18 + builder.slide_offset
+    has_marriage, _marriage_slide_offset = builder.build_marriage_slide(slide=marriage_slide)
+    if not has_marriage:
+        delete_list.append(marriage_slide)
+
+    misc_slide = 19 + builder.slide_offset
+    has_misc, _misc_slide_offset = builder.build_misc_goals_slides(template_slide=misc_slide)
+    if not has_misc:
+        delete_list.append(misc_slide)
 
     wealth_slide = 20 + builder.slide_offset
     print(f"Wealth Created: slide: {wealth_slide} (template 20 + offset {builder.slide_offset})")
+
+    # Pre-duplicate the Wealth Created stencil for the Retirement Annuity slide
+    # (same title + donut layout) before painting wealth, so the copy stays blank.
+    annuity = final_state.get("retirement_annuity") or {}
+    has_annuity = isinstance(annuity, dict) and bool(annuity.get("sources"))
+    if has_annuity:
+        duplicate_slide(prs, wealth_slide)
+        move_slide(prs, len(prs.slides) - 1, wealth_slide + 1)
+        builder.slide_offset += 1
+        print(
+            f"Retirement Annuity: reserved slide {wealth_slide + 1} "
+            f"(offset now {builder.slide_offset})"
+        )
+
     builder.build_wealth_created_ret_breakdown(slide=wealth_slide)
 
+    if has_annuity:
+        annuity_slide = wealth_slide + 1
+        print(f"Retirement Annuity: slide: {annuity_slide}")
+        built = builder.build_retirement_annuity_slide(slide=annuity_slide)
+        if not built:
+            delete_list.append(annuity_slide)
+
+    rsu_esop_slide = 21 + builder.slide_offset
+    print(f"RSU/ESOP: slide: {rsu_esop_slide} (template 21 + offset {builder.slide_offset})")
+    has_rsu_esop, _rsu_esop_slide_offset = builder.build_rsu_esop_slide(slide=rsu_esop_slide)
+    if not has_rsu_esop:
+        delete_list.append(rsu_esop_slide)
+
     slide_offset_before_delete = builder.slide_offset
+    print(f"[MARRIAGE-DEBUG] final slide_offset={builder.slide_offset}; total slides now={len(prs.slides)}")
+    print(f"[MARRIAGE-DEBUG] delete_list (unsorted)={delete_list}")
     delete_list.sort(reverse=True)
+    print(f"[MARRIAGE-DEBUG] delete_list (sorted desc, about to delete)={delete_list}")
     for slideno in delete_list:
         delete_slide(prs, slideno)
 
