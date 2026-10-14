@@ -31,6 +31,7 @@ Behaviour:
 """
 import argparse
 import json
+import posixpath
 import re
 import subprocess
 import sys
@@ -399,10 +400,14 @@ def package(files, order, pages, rendered):
     next_rid = max(int(r.get("Id")[3:]) for r in prels if r.get("Id")[3:].isdigit()) + 1
     for s in list(lst):
         lst.remove(s)
+    dropped = set()
     for page, xml in zip(pages, rendered):
         src = order[page["src"] - 1]
         if not page.get("clone"):
             files[src] = xml
+            if page["dropped"]:
+                dropped.add(src)  # left out of the deck; pruned below
+                continue
             lst.append(sld_of[rid_of[src]])
             continue
         name = f"ppt/slides/slide{next_num}.xml"
@@ -423,30 +428,68 @@ def package(files, order, pages, rendered):
         sld = etree.SubElement(lst, f"{{{P}}}sldId", id=str(next_id))
         sld.set(f"{{{R}}}id", rid)
         next_id += 1
+    for r in list(prels):
+        if "ppt/" + r.get("Target") in dropped:
+            prels.remove(r)
     for part, root in (("ppt/presentation.xml", pres), ("ppt/_rels/presentation.xml.rels", prels),
                        ("[Content_Types].xml", ctypes)):
         files[part] = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
+    prune(files)
+
+
+def _rels_of(part):
+    head, tail = posixpath.split(part)
+    return posixpath.join(head, "_rels", tail + ".rels")
+
+
+def prune(files):
+    """Drop every part no relationship reaches any more.
+
+    Slides left out of the deck take their notes, charts and pictures with
+    them, the same clean-up PowerPoint does when a slide is deleted -- done
+    here so the deck needs no PowerPoint (the server runs Linux).
+    """
+    reached, todo = {"[Content_Types].xml"}, ["_rels/.rels"]
+    while todo:
+        rels_name = todo.pop()
+        if rels_name in reached or rels_name not in files:
+            continue
+        reached.add(rels_name)
+        base = posixpath.dirname(posixpath.dirname(rels_name))  # folder of the part the rels belong to
+        for r in etree.fromstring(files[rels_name]):
+            if r.get("TargetMode") == "External":
+                continue
+            target = r.get("Target")
+            part = target.lstrip("/") if target.startswith("/") else posixpath.normpath(posixpath.join(base, target))
+            if part in files and part not in reached:
+                reached.add(part)
+                todo.append(_rels_of(part))
+    for name in [n for n in files if n not in reached]:
+        del files[name]
+    ctypes = etree.fromstring(files["[Content_Types].xml"])
+    for o in list(ctypes):
+        if o.get("PartName") and o.get("PartName").lstrip("/") not in files:
+            ctypes.remove(o)
+    files["[Content_Types].xml"] = etree.tostring(ctypes, xml_declaration=True, encoding="UTF-8", standalone=True)
 
 
 PS_EXPORT = r"""
-param([string]$In, [string]$Pdf, [string]$Drop)
+param([string]$In, [string]$Pdf)
 $app = New-Object -ComObject PowerPoint.Application
-$p = $app.Presentations.Open($In, $false, $false, $false)
-if ($Drop) { foreach ($i in ($Drop.Split(',') | ForEach-Object { [int]$_ } | Sort-Object -Descending)) { $p.Slides.Item($i).Delete() } }
-$p.Save()
-if ($Pdf) { $p.SaveAs($Pdf, 32) }
+$p = $app.Presentations.Open($In, $true, $false, $false)
+$p.SaveAs($Pdf, 32)
 $p.Close(); $app.Quit()
 """
 
 
-def finish(pptx, pdf, drop):
-    """Delete dropped slides and export the PDF through PowerPoint."""
+def export_pdf(pptx, pdf):
+    """Export the PDF through PowerPoint (Windows only). The PPTX itself is
+    complete without it."""
     with tempfile.TemporaryDirectory() as tmp:
         ps = Path(tmp) / "export.ps1"
         ps.write_text(PS_EXPORT, encoding="utf-8")
         cmd = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(ps),
-               "-In", str(pptx.resolve()), "-Pdf", str(pdf.resolve()) if pdf else "",
-               "-Drop", ",".join(map(str, drop))]
+               "-In", str(pptx.resolve()), "-Pdf", str(pdf.resolve())]
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode:
             sys.exit(f"error: PowerPoint export failed (is {pptx.name} open?):\n{r.stderr or r.stdout}")
@@ -472,15 +515,16 @@ def main():
     written = {i.filename for i in infos}
     with zipfile.ZipFile(pptx, "w", zipfile.ZIP_DEFLATED) as w:
         for info in infos:
-            w.writestr(info, files[info.filename])
+            if info.filename in files:  # parts of slides left out were pruned
+                w.writestr(info, files[info.filename])
         for part in sorted(set(files) - written):
             w.writestr(part, files[part])
     record = {k: v for k, v in values.items() if not k.startswith("_") and not isinstance(v, (dict, list))}
     record.update({k: v for k, v in lists.items()})
     (out / "client_values.json").write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    drop = [i for i, p in enumerate(pages, 1) if p["dropped"]]
-    finish(pptx, pdf, drop)
+    if pdf:
+        export_pdf(pptx, pdf)
 
     kept = [p for p in pages if not p["dropped"]]
     conts = [p for p in pages if p.get("clone") and not p["dropped"]]
